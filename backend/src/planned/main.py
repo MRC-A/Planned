@@ -6,7 +6,7 @@ lets the local LLM create and schedule tasks.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from planned.api import chat, tasks
+from planned.api import chat, system, tasks
 from planned.db import init_db
 
 app = FastAPI(title="Planned API")
@@ -21,6 +21,7 @@ app.add_middleware(
 
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(system.router, prefix="/api/system", tags=["system"])
 
 
 @app.on_event("startup")

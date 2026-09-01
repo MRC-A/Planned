@@ -91,3 +91,15 @@ export async function updateTask(id: number, patch: TaskPatch): Promise<Task> {
 export async function deleteTask(id: number): Promise<void> {
   await request<void>(`/${id}`, { method: 'DELETE' })
 }
+
+// Not under API_BASE (/api/tasks) — this is the launcher's "quit" action,
+// see backend/src/planned/api/system.py. The backend kills itself shortly
+// after responding, so a network error here (connection dropped mid-flight)
+// is the expected outcome, not a bug — swallow it.
+export async function shutdownApp(): Promise<void> {
+  try {
+    await fetch('/api/system/shutdown', { method: 'POST' })
+  } catch {
+    // expected once the backend exits
+  }
+}

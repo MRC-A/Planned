@@ -41,6 +41,7 @@ Shared display helpers (priority/status labels, badge variants, date formatting)
 - `db.py` — SQLite engine; DB file lives at `~/.planned/planned.db` (outside the repo). Dev DB, not seeded — delete the file to reset.
 - `api/tasks.py` — task CRUD: `GET /api/tasks/`, `POST /api/tasks/` (body: `TaskCreate`), `PATCH /api/tasks/{id}` (body: `TaskUpdate`, partial), `DELETE /api/tasks/{id}`. `TaskCreate`/`TaskUpdate` (in `models.py`) exclude server-owned fields (`id`, `created_at`, `updated_at`).
 - `api/chat.py` — chat endpoint, forwards messages to `llm/client.py::LocalLLMClient`.
+- `api/system.py` — `POST /api/system/shutdown`: kills the frontend dev server by port, then this process (Windows-only, local-dev-tool-only — do not expose this beyond localhost). Backing the in-app "Quit app" button. Any subprocess call that shells out to `netstat`/`taskkill` here must decode output as `latin-1`, not `text=True`'s locale-guessed default — `netstat`'s console output isn't reliably valid cp1252 (seen: a silent `UnicodeDecodeError` in a subprocess reader thread on French Windows, which an `except OSError` didn't even catch since it surfaces as `AttributeError` on the caller side).
 - `llm/client.py` — thin wrapper around the `openai` SDK pointed at a local base URL (LM Studio: `http://localhost:1234/v1`, Ollama: `http://localhost:11434/v1`); works for either since both expose an OpenAI-compatible chat-completions API. Tool-calling for task creation/scheduling is not implemented yet (see TODO in that file).
 - Dev venv lives at `backend/.venv` (gitignored); use `./.venv/Scripts/python.exe` (Windows) to run commands inside it without activating.
 
@@ -78,7 +79,7 @@ Run both servers to use the app: the backend on port 8000, the frontend dev serv
 
 ### Daily use (Windows)
 
-`scripts/start-planned.bat` starts both servers (each in its own window — close a window or Ctrl+C in it to stop that server) and opens the app in the browser. It force-frees ports 5173/8000 first, so it's safe to double-click again even if a previous run is still hanging around. A desktop shortcut ("Planned") points to it. Assumes `backend/.venv` and `frontend/node_modules` already exist (first-time setup still needs the manual install commands above).
+`scripts/start-planned.bat` starts both servers (each in its own window — close a window or Ctrl+C in it to stop that server) and opens the app in the browser. It force-frees ports 5173/8000 first, so it's safe to double-click again even if a previous run is still hanging around. A desktop shortcut ("Planned") points to it. Assumes `backend/.venv` and `frontend/node_modules` already exist (first-time setup still needs the manual install commands above). Runs the backend **without** `--reload` (single process — the in-app "Quit app" button relies on there being exactly one backend process to kill by port; use the `--reload` command above instead when actively developing). The "Quit app" button (in `ChatPanel.tsx`) calls `POST /api/system/shutdown` to stop both servers without touching either console window.
 
 ## Commit workflow
 
