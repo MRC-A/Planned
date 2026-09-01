@@ -63,3 +63,8 @@ npm run preview   # preview the production build
 ```
 
 There is no lint tooling configured yet (the `lint` script in `package.json` references `eslint`, which isn't installed).
+
+## Commit workflow
+
+- Before committing, check whether this file needs updating (new architecture, convention, or command) and fold the update into the same commit.
+- After every commit, give the user a short written summary of what was actually done — not just the commit hash/message.
