@@ -1,3 +1,3 @@
 export default function GanttView() {
-  return <div className="text-neutral-400">Gantt chart — coming soon</div>
+  return <div className="text-muted-foreground">Gantt chart — coming soon</div>
 }

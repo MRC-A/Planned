@@ -12,15 +12,30 @@ class TaskStatus(str, Enum):
     DONE = "done"
 
 
+class TaskPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
 class Task(SQLModel, table=True):
-    """A single task — the shared unit of data behind every view."""
+    """A single task — the shared unit of data behind every view.
+
+    This is the exhaustive record used by the Table view. The To-Do list and
+    other views only surface a subset of these fields.
+    """
 
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     description: str = ""
     status: TaskStatus = TaskStatus.TODO
+    priority: TaskPriority = TaskPriority.MEDIUM
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
     duration_hours: Optional[float] = None
+    progress: float = 0  # percentage, 0-100
     depends_on: Optional[int] = Field(default=None, foreign_key="task.id")
+    tags: Optional[str] = None  # comma-separated for now; TODO: proper many-to-many
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
