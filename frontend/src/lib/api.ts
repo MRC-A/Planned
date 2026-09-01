@@ -1,6 +1,6 @@
 // Thin fetch wrapper around the backend task API — converts between the
 // backend's snake_case/comma-separated shape and the frontend Task type.
-import type { Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
+import type { ProposedTask, Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
 
 const API_BASE = '/api/tasks'
 
@@ -95,14 +95,44 @@ export async function deleteTask(id: number): Promise<void> {
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  proposedTasks?: ProposedTask[]
 }
 
-// Not under API_BASE either — the chat endpoint lives at /api/chat.
+interface ApiProposedTask {
+  title: string
+  description: string
+  priority: TaskPriority
+  start_date: string | null
+  due_date: string | null
+  duration_hours: number | null
+  tags: string[]
+}
+
+interface ApiChatResponse {
+  content: string
+  proposed_tasks: ApiProposedTask[] | null
+}
+
+function proposedTaskFromApi(raw: ApiProposedTask): ProposedTask {
+  return {
+    title: raw.title,
+    description: raw.description,
+    priority: raw.priority,
+    startDate: raw.start_date,
+    dueDate: raw.due_date,
+    durationHours: raw.duration_hours,
+    tags: raw.tags,
+  }
+}
+
+// Not under API_BASE either — the chat endpoint lives at /api/chat. Only
+// role/content go out (proposedTasks is a client-side annotation the
+// backend doesn't know about and doesn't need echoed back).
 export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatMessage> {
   const response = await fetch('/api/chat/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })) }),
   })
   if (!response.ok) {
     let message = `Chat request failed (${response.status})`
@@ -114,7 +144,12 @@ export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatMess
     }
     throw new Error(message)
   }
-  return response.json()
+  const raw: ApiChatResponse = await response.json()
+  return {
+    role: 'assistant',
+    content: raw.content,
+    proposedTasks: raw.proposed_tasks?.map(proposedTaskFromApi),
+  }
 }
 
 // Not under API_BASE (/api/tasks) — this is the launcher's "quit" action,

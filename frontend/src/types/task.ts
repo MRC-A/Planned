@@ -29,3 +29,16 @@ export type TaskDraft = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>> & 
 
 // Payload for a partial update — every field optional.
 export type TaskPatch = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>
+
+// A task the chat assistant suggests creating — not yet in the database.
+// Same shape as TaskDraft's core fields (assignable to it directly), minus
+// the fields the assistant doesn't set (status, progress, dependsOn).
+export interface ProposedTask {
+  title: string
+  description: string
+  priority: TaskPriority
+  startDate: string | null
+  dueDate: string | null
+  durationHours: number | null
+  tags: string[]
+}

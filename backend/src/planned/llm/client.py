@@ -3,6 +3,9 @@
 Both expose an OpenAI-compatible chat-completions API, so the same client
 works for either — only base_url/model differ.
 """
+import json
+from typing import Any, Optional
+
 from openai import OpenAI
 
 from planned.config import LLM_BASE_URL, LLM_MODEL
@@ -13,10 +16,26 @@ class LocalLLMClient:
         self._client = OpenAI(base_url=base_url, api_key="not-needed")
         self._model = model
 
-    def chat(self, messages: list[dict]) -> str:
-        """Send a conversation, return the assistant's reply.
+    def chat(self, messages: list[dict], tools: Optional[list[dict]] = None) -> dict[str, Any]:
+        """Send a conversation, optionally offering tool(s) the model can call.
 
-        TODO: streaming, function/tool calling to create & schedule tasks.
+        Returns {"content": str, "tool_call": {"name": str, "arguments": dict} | None}.
+        Only the first tool call is surfaced — every caller in this app only
+        ever offers a single tool, so there's nothing to disambiguate.
+
+        TODO: streaming.
         """
-        response = self._client.chat.completions.create(model=self._model, messages=messages)
-        return response.choices[0].message.content or ""
+        response = self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            tools=tools,
+        )
+        message = response.choices[0].message
+        tool_call = None
+        if message.tool_calls:
+            call = message.tool_calls[0]
+            tool_call = {
+                "name": call.function.name,
+                "arguments": json.loads(call.function.arguments),
+            }
+        return {"content": message.content or "", "tool_call": tool_call}

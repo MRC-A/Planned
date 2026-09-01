@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { shutdownApp } from '@/lib/api'
 import { useChat } from '@/hooks/use-chat'
+import { PRIORITY_BADGE_VARIANT, PRIORITY_LABEL, formatDate } from '@/lib/task-display'
+import type { ProposedTask, TaskDraft } from '@/types/task'
 
-export default function ChatPanel() {
+interface ChatPanelProps {
+  onCreateTask: (draft: TaskDraft) => Promise<void>
+}
+
+export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
   const { messages, sending, error, send } = useChat()
   const [draft, setDraft] = useState('')
   const [shuttingDown, setShuttingDown] = useState(false)
+  const [resolvedProposals, setResolvedProposals] = useState<Set<number>>(new Set())
+  const [applyingIndex, setApplyingIndex] = useState<number | null>(null)
+  const [proposalError, setProposalError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -42,6 +52,25 @@ export default function ChatPanel() {
     }
   }
 
+  async function handleCreateProposed(index: number, tasks: ProposedTask[]) {
+    setApplyingIndex(index)
+    setProposalError(null)
+    try {
+      for (const task of tasks) {
+        await onCreateTask(task)
+      }
+      setResolvedProposals((prev) => new Set(prev).add(index))
+    } catch (err) {
+      setProposalError(err instanceof Error ? err.message : 'Failed to create tasks')
+    } finally {
+      setApplyingIndex(null)
+    }
+  }
+
+  function handleDiscardProposed(index: number) {
+    setResolvedProposals((prev) => new Set(prev).add(index))
+  }
+
   if (shuttingDown) {
     return (
       <aside className="flex w-80 shrink-0 items-center justify-center border-l border-border bg-card p-4">
@@ -61,17 +90,66 @@ export default function ChatPanel() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         {messages.length === 0 && (
-          <p className="text-sm text-muted-foreground">Ask your local LLM to help plan and organize tasks.</p>
+          <p className="text-sm text-muted-foreground">
+            Tell your assistant what you need to get done — it can turn that into tasks for you to
+            review and add.
+          </p>
         )}
         <div className="flex flex-col gap-3">
           {messages.map((m, i) => (
-            <div
-              key={i}
-              className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-                m.role === 'user' ? 'ml-auto bg-primary text-primary-foreground' : 'bg-muted text-foreground'
-              }`}
-            >
-              {m.content}
+            <div key={i} className="flex flex-col gap-2">
+              <div
+                className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                  m.role === 'user' ? 'ml-auto bg-primary text-primary-foreground' : 'bg-muted text-foreground'
+                }`}
+              >
+                {m.content}
+              </div>
+
+              {m.proposedTasks && m.proposedTasks.length > 0 && (
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <ul className="flex flex-col gap-2">
+                    {m.proposedTasks.map((t, ti) => (
+                      <li key={ti} className="flex flex-col gap-0.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-foreground">{t.title}</span>
+                          <Badge variant={PRIORITY_BADGE_VARIANT[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>
+                        </div>
+                        {(t.startDate || t.dueDate) && (
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatDate(t.startDate)} → {formatDate(t.dueDate)}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {resolvedProposals.has(i) ? (
+                    <p className="mt-2 text-xs text-muted-foreground">Done.</p>
+                  ) : (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={applyingIndex === i}
+                        onClick={() => handleCreateProposed(i, m.proposedTasks!)}
+                      >
+                        {applyingIndex === i
+                          ? 'Creating…'
+                          : `Create ${m.proposedTasks.length} task${m.proposedTasks.length === 1 ? '' : 's'}`}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={applyingIndex === i}
+                        onClick={() => handleDiscardProposed(i)}
+                      >
+                        Discard
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {sending && (
@@ -82,9 +160,9 @@ export default function ChatPanel() {
         </div>
       </div>
 
-      {error && (
+      {(error || proposalError) && (
         <p className="border-t border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive">
-          {error}
+          {error || proposalError}
         </p>
       )}
 

@@ -62,7 +62,7 @@ export default function App() {
           {view === 'gantt' && <GanttView tasks={tasks} />}
         </div>
       </main>
-      <ChatPanel />
+      <ChatPanel onCreateTask={add} />
     </div>
   )
 }
