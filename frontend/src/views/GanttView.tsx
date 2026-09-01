@@ -1,9 +1,12 @@
-// Gantt chart, hand-rolled with CSS Grid — no external Gantt library.
-// (An earlier attempt used frappe-gantt; its internal SVG-sizing logic
-// never produced a working horizontal scrollbar in this app's layout, and
-// debugging it blind, without browser access, wasn't worth the time. This
-// version has full control over layout and the sticky task-name column,
-// which is exactly what tripped up that integration.)
+// Gantt chart, hand-rolled with CSS Grid — no external Gantt library (see
+// CLAUDE.md for why).
+//
+// Bars are always positioned at day granularity (one grid column per day,
+// `pxPerDay` wide), so they stay pixel-accurate at any zoom level. What
+// changes between Day/Week/Month is only how the header and the vertical
+// divider lines are grouped — one cell per day, per week, or per month —
+// so the chart doesn't turn into an illegible wall of 4px-wide day cells
+// when zoomed out.
 //
 // Tasks with neither a start nor a due date can't be placed on a timeline
 // and are simply not shown (count surfaced below the chart).
@@ -14,9 +17,10 @@ interface GanttViewProps {
   tasks: Task[]
 }
 
-type Scale = 'Day' | 'Week'
+type Scale = 'Day' | 'Week' | 'Month'
 
-const SCALE_PX_PER_DAY: Record<Scale, number> = { Day: 36, Week: 14 }
+const SCALES: Scale[] = ['Day', 'Week', 'Month']
+const SCALE_PX_PER_DAY: Record<Scale, number> = { Day: 36, Week: 14, Month: 5 }
 const LABEL_WIDTH = 200
 const ROW_HEIGHT = 36
 const HEADER_HEIGHT = 32
@@ -34,8 +38,19 @@ interface GanttRow {
   durationDays: number // inclusive span, at least 1
 }
 
+interface HeaderGroup {
+  startOffset: number
+  spanDays: number
+  label: string
+}
+
 function parseDate(iso: string): Date {
-  return new Date(`${iso}T00:00:00`)
+  // The backend returns full datetime strings ("2026-09-30T00:00:00"), not
+  // bare dates — take just the date part, then force local-midnight parsing
+  // (appending a bare "T00:00:00", with no timezone marker, is what makes
+  // JS parse it as local time instead of UTC, avoiding an off-by-one-day
+  // shift for users behind UTC).
+  return new Date(`${iso.slice(0, 10)}T00:00:00`)
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -48,22 +63,71 @@ function addDays(d: Date, days: number): Date {
   return copy
 }
 
-function formatDayLabel(d: Date): string {
-  return d.getDate() === 1
-    ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    : String(d.getDate())
+function startOfWeek(d: Date): Date {
+  const day = d.getDay() // 0 = Sunday .. 6 = Saturday
+  return addDays(d, day === 0 ? -6 : 1 - day) // Monday-start week
+}
+
+function buildGroups(scale: Scale, rangeStart: Date, totalDays: number): HeaderGroup[] {
+  if (scale === 'Day') {
+    return Array.from({ length: totalDays }, (_, i) => {
+      const d = addDays(rangeStart, i)
+      return {
+        startOffset: i,
+        spanDays: 1,
+        label: d.getDate() === 1 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : String(d.getDate()),
+      }
+    })
+  }
+
+  const groups: HeaderGroup[] = []
+
+  if (scale === 'Week') {
+    let cursor = startOfWeek(rangeStart)
+    while (daysBetween(rangeStart, cursor) < totalDays) {
+      const rawOffset = daysBetween(rangeStart, cursor)
+      const startOffset = Math.max(rawOffset, 0)
+      const endOffset = Math.min(rawOffset + 7, totalDays)
+      if (endOffset > startOffset) {
+        groups.push({
+          startOffset,
+          spanDays: endOffset - startOffset,
+          label: addDays(rangeStart, startOffset).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        })
+      }
+      cursor = addDays(cursor, 7)
+    }
+    return groups
+  }
+
+  // Month
+  let cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
+  while (daysBetween(rangeStart, cursor) < totalDays) {
+    const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)
+    const startOffset = Math.max(daysBetween(rangeStart, cursor), 0)
+    const endOffset = Math.min(daysBetween(rangeStart, next), totalDays)
+    if (endOffset > startOffset) {
+      groups.push({
+        startOffset,
+        spanDays: endOffset - startOffset,
+        label: cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      })
+    }
+    cursor = next
+  }
+  return groups
 }
 
 export default function GanttView({ tasks }: GanttViewProps) {
-  const [scale, setScale] = useState<Scale>('Day')
+  const [scale, setScale] = useState<Scale>('Week')
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const scheduled = useMemo(() => tasks.filter((t) => t.startDate || t.dueDate), [tasks])
   const unscheduled = tasks.length - scheduled.length
 
-  const { rows, days, todayOffset } = useMemo(() => {
+  const { rows, rangeStart, totalDays, todayOffset } = useMemo(() => {
     if (scheduled.length === 0) {
-      return { rows: [] as GanttRow[], days: [] as Date[], todayOffset: -1 }
+      return { rows: [] as GanttRow[], rangeStart: new Date(), totalDays: 0, todayOffset: -1 }
     }
     const starts = scheduled.map((t) => parseDate(t.startDate ?? t.dueDate!))
     const ends = scheduled.map((t) => parseDate(t.dueDate ?? t.startDate!))
@@ -84,15 +148,11 @@ export default function GanttView({ tasks }: GanttViewProps) {
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    return {
-      rows,
-      days: Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)),
-      todayOffset: daysBetween(rangeStart, today),
-    }
+    return { rows, rangeStart, totalDays, todayOffset: daysBetween(rangeStart, today) }
   }, [scheduled])
 
   const pxPerDay = SCALE_PX_PER_DAY[scale]
-  const totalDays = days.length
+  const groups = useMemo(() => buildGroups(scale, rangeStart, totalDays), [scale, rangeStart, totalDays])
   const showTodayMarker = todayOffset >= 0 && todayOffset < totalDays
 
   function scrollToToday() {
@@ -104,6 +164,15 @@ export default function GanttView({ tasks }: GanttViewProps) {
   // Center on today whenever the chart (re)builds or the zoom level changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(scrollToToday, [totalDays, pxPerDay])
+
+  // A plain mouse wheel only ever produces vertical delta, and this widget
+  // has nothing to scroll vertically — remap it to horizontal scroll so
+  // wheel/trackpad users can actually move through the timeline.
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>) {
+    if (e.deltaY === 0 || !scrollRef.current) return
+    scrollRef.current.scrollLeft += e.deltaY
+    e.preventDefault()
+  }
 
   if (scheduled.length === 0) {
     return (
@@ -124,7 +193,7 @@ export default function GanttView({ tasks }: GanttViewProps) {
           Today
         </button>
         <div className="flex overflow-hidden rounded-md border border-border">
-          {(['Day', 'Week'] as Scale[]).map((s) => (
+          {SCALES.map((s) => (
             <button
               key={s}
               onClick={() => setScale(s)}
@@ -138,7 +207,11 @@ export default function GanttView({ tasks }: GanttViewProps) {
         </div>
       </div>
 
-      <div ref={scrollRef} className="overflow-x-auto rounded-lg border border-border">
+      <div
+        ref={scrollRef}
+        onWheel={handleWheel}
+        className="overflow-x-auto rounded-lg border border-border"
+      >
         <div
           className="grid"
           style={{
@@ -151,15 +224,13 @@ export default function GanttView({ tasks }: GanttViewProps) {
             className="sticky left-0 z-20 border-r border-b border-border bg-card"
             style={{ gridRow: 1, gridColumn: 1 }}
           />
-          {days.map((d, i) => (
+          {groups.map((g) => (
             <div
-              key={i}
-              className={`flex items-center justify-center border-b border-border text-[11px] ${
-                d.getDay() === 0 || d.getDay() === 6 ? 'bg-muted text-muted-foreground' : 'text-foreground'
-              }`}
-              style={{ gridRow: 1, gridColumn: i + 2 }}
+              key={g.startOffset}
+              className="flex items-center justify-center overflow-hidden border-r border-b border-border px-1 text-[11px] text-foreground"
+              style={{ gridRow: 1, gridColumn: `${g.startOffset + 2} / span ${g.spanDays}` }}
             >
-              {formatDayLabel(d)}
+              <span className="truncate">{g.label}</span>
             </div>
           ))}
 
@@ -171,7 +242,7 @@ export default function GanttView({ tasks }: GanttViewProps) {
           )}
 
           {rows.map((row, i) => (
-            <GanttBarRow key={row.task.id} row={row} rowIndex={i + 2} totalDays={totalDays} pxPerDay={pxPerDay} />
+            <GanttBarRow key={row.task.id} row={row} rowIndex={i + 2} groups={groups} />
           ))}
         </div>
       </div>
@@ -188,11 +259,10 @@ export default function GanttView({ tasks }: GanttViewProps) {
 interface GanttBarRowProps {
   row: GanttRow
   rowIndex: number
-  totalDays: number
-  pxPerDay: number
+  groups: HeaderGroup[]
 }
 
-function GanttBarRow({ row, rowIndex, totalDays, pxPerDay }: GanttBarRowProps) {
+function GanttBarRow({ row, rowIndex, groups }: GanttBarRowProps) {
   const { task, startOffset, durationDays } = row
   return (
     <>
@@ -203,14 +273,13 @@ function GanttBarRow({ row, rowIndex, totalDays, pxPerDay }: GanttBarRowProps) {
       >
         {task.title}
       </div>
-      <div
-        className="border-b border-border"
-        style={{
-          gridRow: rowIndex,
-          gridColumn: `2 / span ${totalDays}`,
-          backgroundImage: `repeating-linear-gradient(to right, transparent, transparent ${pxPerDay - 1}px, var(--color-border) ${pxPerDay - 1}px, var(--color-border) ${pxPerDay}px)`,
-        }}
-      />
+      {groups.map((g) => (
+        <div
+          key={g.startOffset}
+          className="border-r border-b border-border"
+          style={{ gridRow: rowIndex, gridColumn: `${g.startOffset + 2} / span ${g.spanDays}` }}
+        />
+      ))}
       <div
         className={`m-1 overflow-hidden rounded ${PRIORITY_BAR_CLASS[task.priority]}`}
         style={{ gridRow: rowIndex, gridColumn: `${startOffset + 2} / span ${durationDays}` }}
