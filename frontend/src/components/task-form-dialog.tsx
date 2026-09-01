@@ -266,9 +266,12 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
               <SelectContent>
                 <SelectItem value={NO_PARENT}>None — top-level task</SelectItem>
                 {tasks
-                  // Exclude the task itself and its own direct children —
-                  // both would create an immediate parent/child cycle.
-                  .filter((t) => t.id !== task?.id && t.parentId !== task?.id)
+                  // Subtasks are one level deep: only a top-level task
+                  // (parentId === null) can be picked as a parent — this
+                  // also rules out the task itself, since a task with
+                  // children of its own is (trivially) top-level already,
+                  // but never one of its own children either way.
+                  .filter((t) => t.id !== task?.id && t.parentId === null)
                   .map((t) => (
                     <SelectItem key={t.id} value={String(t.id)}>
                       {t.title}
