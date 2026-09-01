@@ -89,6 +89,11 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
   const [submitting, setSubmitting] = useState(false)
 
   const isEditing = task !== undefined
+  // Subtasks are one level deep: a task that already has children of its
+  // own can't be given a parent (see backend/src/planned/api/tasks.py's
+  // _validate_parent) — surface that as a disabled field with an
+  // explanation instead of letting the user hit a 400 on submit.
+  const hasChildren = isEditing && tasks.some((t) => t.parentId === task.id)
 
   // Re-sync the form with the task's current values each time the dialog
   // opens, rather than once on mount — the task may have changed since.
@@ -115,7 +120,9 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
         durationHours: form.durationHours ? Number(form.durationHours) : null,
         progress: form.progress ? Number(form.progress) : 0,
         dependsOn: form.dependsOn === NO_DEPENDENCY ? null : Number(form.dependsOn),
-        parentId: form.parentId === NO_PARENT ? null : Number(form.parentId),
+        // Belt and suspenders: the field is disabled whenever hasChildren,
+        // but force it here too in case form state lagged a stale value.
+        parentId: hasChildren || form.parentId === NO_PARENT ? null : Number(form.parentId),
         tags: form.tags
           .split(',')
           .map((t) => t.trim())
@@ -259,26 +266,33 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="task-parent">Parent task</Label>
-            <Select value={form.parentId} onValueChange={(v) => set('parentId', v)}>
-              <SelectTrigger id="task-parent" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_PARENT}>None — top-level task</SelectItem>
-                {tasks
-                  // Subtasks are one level deep: only a top-level task
-                  // (parentId === null) can be picked as a parent — this
-                  // also rules out the task itself, since a task with
-                  // children of its own is (trivially) top-level already,
-                  // but never one of its own children either way.
-                  .filter((t) => t.id !== task?.id && t.parentId === null)
-                  .map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.title}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            {hasChildren ? (
+              <p className="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                This task already has subtasks, so it can't itself become a subtask — subtasks are
+                one level deep.
+              </p>
+            ) : (
+              <Select value={form.parentId} onValueChange={(v) => set('parentId', v)}>
+                <SelectTrigger id="task-parent" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_PARENT}>None — top-level task</SelectItem>
+                  {tasks
+                    // Subtasks are one level deep: only a top-level task
+                    // (parentId === null) can be picked as a parent — this
+                    // also rules out the task itself, since a task with
+                    // children of its own is (trivially) top-level already,
+                    // but never one of its own children either way.
+                    .filter((t) => t.id !== task?.id && t.parentId === null)
+                    .map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.title}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
