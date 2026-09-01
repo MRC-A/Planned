@@ -40,15 +40,16 @@ Shared display helpers (priority/status labels, badge variants, date formatting)
 - `main.py` — FastAPI app, CORS for the Vite dev server (`http://localhost:5173`), mounts routers, runs `init_db()` on startup.
 - `db.py` — SQLite engine; DB file lives at `~/.planned/planned.db` (outside the repo). Dev DB, not seeded — delete the file to reset.
 - `api/tasks.py` — task CRUD: `GET /api/tasks/`, `POST /api/tasks/` (body: `TaskCreate`), `PATCH /api/tasks/{id}` (body: `TaskUpdate`, partial), `DELETE /api/tasks/{id}`. `TaskCreate`/`TaskUpdate` (in `models.py`) exclude server-owned fields (`id`, `created_at`, `updated_at`).
-- `api/chat.py` — chat endpoint, forwards messages to `llm/client.py::LocalLLMClient`.
+- `api/chat.py` — `POST /api/chat/`: prepends a fixed system prompt, forwards the full message history to `llm/client.py::LocalLLMClient`, returns the reply. Stateless — the client resends the whole conversation every time. Wraps LLM errors (e.g. LM Studio/Ollama not running) as `HTTPException(503, ...)` with a message meant to be shown as-is to the user.
 - `api/system.py` — `POST /api/system/shutdown`: kills the frontend dev server by port, then this process (Windows-only, local-dev-tool-only — do not expose this beyond localhost). Backing the in-app "Quit app" button. Any subprocess call that shells out to `netstat`/`taskkill` here must decode output as `latin-1`, not `text=True`'s locale-guessed default — `netstat`'s console output isn't reliably valid cp1252 (seen: a silent `UnicodeDecodeError` in a subprocess reader thread on French Windows, which an `except OSError` didn't even catch since it surfaces as `AttributeError` on the caller side).
-- `llm/client.py` — thin wrapper around the `openai` SDK pointed at a local base URL (LM Studio: `http://localhost:1234/v1`, Ollama: `http://localhost:11434/v1`); works for either since both expose an OpenAI-compatible chat-completions API. Tool-calling for task creation/scheduling is not implemented yet (see TODO in that file).
+- `llm/client.py` — thin wrapper around the `openai` SDK pointed at a local base URL (LM Studio: `http://localhost:1234/v1`, Ollama: `http://localhost:11434/v1`); works for either since both expose an OpenAI-compatible chat-completions API. The model name (`config.py::LLM_MODEL`, `"local-model"`) is a placeholder — LM Studio ignores it and serves whatever model is currently loaded, confirmed working; Ollama needs a real model name if you switch to it. Tool-calling for task creation/scheduling is not implemented yet (see TODO in that file) — the chat can talk, not act.
 - Dev venv lives at `backend/.venv` (gitignored); use `./.venv/Scripts/python.exe` (Windows) to run commands inside it without activating.
 
 ### Frontend
 
 - `App.tsx` — owns the active-view state, the shared task data (via `useTasks`), and the top nav; add new views here.
-- `lib/api.ts` — fetch wrapper for the task API; the only place that knows about the backend's snake_case JSON shape.
+- `lib/api.ts` — fetch wrapper for the task API (the only place that knows about the backend's snake_case JSON shape), plus `sendChatMessage` and `shutdownApp`.
+- `views/ChatPanel.tsx` + `hooks/use-chat.ts` — the sidebar chat. Conversation lives only in React state (not persisted, resets on reload); `use-chat` resends the full history on every message since the backend is stateless. No task-creation from chat yet — plain conversation only.
 - shadcn/ui is configured for Tailwind v4 (`components.json`, no `tailwind.config.ts` — theme tokens live in `src/index.css` via `@theme inline`). Add components with `npx shadcn@latest add <name>` from `frontend/`.
 - Path alias `@/*` → `frontend/src/*` (configured in both `tsconfig.json` and `vite.config.ts`).
 - `vite.config.ts` proxies `/api` to `http://localhost:8000` — run the backend on port 8000 for the frontend dev server to reach it.

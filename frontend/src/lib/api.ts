@@ -92,6 +92,31 @@ export async function deleteTask(id: number): Promise<void> {
   await request<void>(`/${id}`, { method: 'DELETE' })
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+// Not under API_BASE either — the chat endpoint lives at /api/chat.
+export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatMessage> {
+  const response = await fetch('/api/chat/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages }),
+  })
+  if (!response.ok) {
+    let message = `Chat request failed (${response.status})`
+    try {
+      const body = await response.json()
+      if (body?.detail) message = body.detail
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(message)
+  }
+  return response.json()
+}
+
 // Not under API_BASE (/api/tasks) — this is the launcher's "quit" action,
 // see backend/src/planned/api/system.py. The backend kills itself shortly
 // after responding, so a network error here (connection dropped mid-flight)
