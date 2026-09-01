@@ -80,7 +80,9 @@ export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps
           {sorted.map((task) => (
             <li
               key={task.id}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
+              className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 ${
+                task.status === 'done' ? 'bg-done' : 'bg-card'
+              }`}
             >
               <Checkbox checked={task.status === 'done'} onCheckedChange={() => onToggleDone(task)} />
               <span

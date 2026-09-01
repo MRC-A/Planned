@@ -293,10 +293,15 @@ interface GanttBarRowProps {
 
 function GanttBarRow({ row, rowIndex, groups }: GanttBarRowProps) {
   const { task, startOffset, durationDays } = row
+  // Done overrides the priority color on both the label cell and the bar —
+  // only reachable once "Show completed" reveals the row at all.
+  const isDone = task.status === 'done'
   return (
     <>
       <div
-        className="sticky left-0 z-10 flex items-center truncate border-r border-b border-border bg-card px-2 text-xs font-medium text-foreground"
+        className={`sticky left-0 z-10 flex items-center truncate border-r border-b border-border px-2 text-xs font-medium text-foreground ${
+          isDone ? 'bg-done' : 'bg-card'
+        }`}
         style={{ gridRow: rowIndex, gridColumn: 1 }}
         title={task.title}
       >
@@ -310,7 +315,7 @@ function GanttBarRow({ row, rowIndex, groups }: GanttBarRowProps) {
         />
       ))}
       <div
-        className={`m-1 overflow-hidden rounded ${PRIORITY_BAR_CLASS[task.priority]}`}
+        className={`m-1 overflow-hidden rounded ${isDone ? 'bg-done' : PRIORITY_BAR_CLASS[task.priority]}`}
         style={{ gridRow: rowIndex, gridColumn: `${startOffset + 2} / span ${durationDays}` }}
         title={`${task.title} — ${task.progress}%`}
       >

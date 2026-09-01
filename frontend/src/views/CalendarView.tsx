@@ -7,7 +7,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import type { EventContentArg } from '@fullcalendar/core'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
 import { useShowCompleted } from '@/hooks/use-show-completed'
-import { PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
+import { DONE_BG_COLOR, DONE_TEXT_COLOR, PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
 import '@/styles/calendar.css'
 import type { Task } from '@/types/task'
 
@@ -29,15 +29,19 @@ function toEvents(tasks: Task[]) {
       // FullCalendar's all-day `end` is exclusive, so a due date needs +1 day
       // to actually cover that day on the grid.
       const end = t.dueDate ? addDays(t.dueDate, 1) : addDays(start, 1)
+      // Done overrides the priority color — only reachable once "Show
+      // completed" reveals the event at all (see task-display.ts).
+      const bg = t.status === 'done' ? DONE_BG_COLOR : PRIORITY_BG_COLOR[t.priority]
+      const text = t.status === 'done' ? DONE_TEXT_COLOR : PRIORITY_TEXT_COLOR[t.priority]
       return {
         id: String(t.id),
         title: t.title,
         start,
         end,
         allDay: true,
-        backgroundColor: PRIORITY_BG_COLOR[t.priority],
-        borderColor: PRIORITY_BG_COLOR[t.priority],
-        textColor: PRIORITY_TEXT_COLOR[t.priority],
+        backgroundColor: bg,
+        borderColor: bg,
+        textColor: text,
       }
     })
 }

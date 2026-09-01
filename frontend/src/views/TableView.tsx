@@ -8,6 +8,13 @@ import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -21,6 +28,7 @@ import { useShowCompleted } from '@/hooks/use-show-completed'
 import {
   PRIORITY_BADGE_VARIANT,
   PRIORITY_LABEL,
+  PRIORITY_WEIGHT,
   STATUS_BADGE_VARIANT,
   STATUS_LABEL,
   formatDate,
@@ -31,6 +39,51 @@ const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   todo: 'in_progress',
   in_progress: 'done',
   done: 'todo',
+}
+
+type SortMode = 'none' | 'priority' | 'startDate' | 'dueDate' | 'status'
+
+const SORT_LABEL: Record<SortMode, string> = {
+  none: 'Default',
+  priority: 'Priority',
+  startDate: 'Start date',
+  dueDate: 'Due date',
+  status: 'Status',
+}
+
+// Ascending in the natural workflow order (todo → in_progress → done),
+// rather than PRIORITY_WEIGHT's "most urgent first" convention — status
+// isn't a scale of urgency the same way.
+const STATUS_WEIGHT: Record<TaskStatus, number> = {
+  todo: 0,
+  in_progress: 1,
+  done: 2,
+}
+
+function compareByOptionalDate(a: string | null, b: string | null): number {
+  if (!a && !b) return 0
+  if (!a) return 1 // tasks with no date sort last
+  if (!b) return -1
+  return new Date(a).getTime() - new Date(b).getTime()
+}
+
+// Applied to both the top-level list and each parent's children (in
+// renderRow and the render below), so an expanded subtask list follows the
+// same order rather than staying in raw insertion order.
+function sortTasks(list: Task[], mode: SortMode): Task[] {
+  if (mode === 'none') return list
+  return [...list].sort((a, b) => {
+    switch (mode) {
+      case 'priority':
+        return PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority]
+      case 'startDate':
+        return compareByOptionalDate(a.startDate, b.startDate)
+      case 'dueDate':
+        return compareByOptionalDate(a.dueDate, b.dueDate)
+      case 'status':
+        return STATUS_WEIGHT[a.status] - STATUS_WEIGHT[b.status]
+    }
+  })
 }
 
 interface TableViewProps {
@@ -50,13 +103,17 @@ function taskTitle(tasks: Task[], id: number | null): string | null {
 
 export default function TableView({ tasks, loading, error, onCreate, onEdit, onCycleStatus, onDelete }: TableViewProps) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [sortMode, setSortMode] = useState<SortMode>('none')
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('table')
 
   // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
   // applied at both levels, so a done subtask doesn't linger under an
   // expanded parent either.
   const visibleTasks = showCompleted ? tasks : tasks.filter((t) => t.status !== 'done')
-  const topLevel = visibleTasks.filter((t) => t.parentId === null)
+  const topLevel = sortTasks(
+    visibleTasks.filter((t) => t.parentId === null),
+    sortMode,
+  )
   const hiddenCount = tasks.length - visibleTasks.length
 
   function toggleExpanded(id: number) {
@@ -69,11 +126,19 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
   }
 
   function renderRow(task: Task, isSubtask: boolean) {
-    const children = visibleTasks.filter((t) => t.parentId === task.id)
+    const children = sortTasks(visibleTasks.filter((t) => t.parentId === task.id), sortMode)
     const isExpanded = expanded.has(task.id)
+    // Done takes priority over the subtask tint — it's the more useful
+    // signal, and only shows up at all once "Show completed" reveals it.
+    const rowClassName = [
+      task.status === 'done' ? 'bg-done' : isSubtask ? 'bg-muted/30' : '',
+      isSubtask ? 'text-xs' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
 
     return (
-      <TableRow key={task.id} className={isSubtask ? 'bg-muted/30 text-xs' : undefined}>
+      <TableRow key={task.id} className={rowClassName || undefined}>
         <TableCell className="font-medium text-foreground">
           <div className="flex items-center gap-1" style={isSubtask ? { paddingLeft: '2rem' } : undefined}>
             {!isSubtask && children.length > 0 ? (
@@ -146,6 +211,19 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
               (!showCompleted && hiddenCount > 0 ? ` (${hiddenCount} completed hidden)` : '')}
         </p>
         <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Sort by</span>
+          <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
+            <SelectTrigger size="sm" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(SORT_LABEL) as SortMode[]).map((mode) => (
+                <SelectItem key={mode} value={mode}>
+                  {SORT_LABEL[mode]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <ShowCompletedToggle
             showCompleted={showCompleted}
             hiddenCount={hiddenCount}
@@ -180,7 +258,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           </TableHeader>
           <TableBody>
             {topLevel.map((task) => {
-              const children = visibleTasks.filter((t) => t.parentId === task.id)
+              const children = sortTasks(visibleTasks.filter((t) => t.parentId === task.id), sortMode)
               return (
                 <Fragment key={task.id}>
                   {renderRow(task, false)}

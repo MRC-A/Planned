@@ -54,6 +54,17 @@ export const STATUS_BADGE_VARIANT: Record<TaskStatus, 'outline' | 'secondary' | 
   done: 'secondary',
 }
 
+// Slightly-green background so a completed task stands out at a glance
+// wherever it's shown (Table, To-Do, Calendar, Gantt — hidden by default in
+// all of them, see hooks/use-show-completed.ts). Table/To-Do/Gantt apply
+// this as the `done`/`done-foreground` Tailwind classes directly; Calendar
+// needs real CSS color strings instead, for FullCalendar's
+// backgroundColor/textColor event props (see PRIORITY_BG_COLOR above) —
+// these two constants are that pair, overriding the priority colors when a
+// task is done.
+export const DONE_BG_COLOR = 'var(--color-done)'
+export const DONE_TEXT_COLOR = 'var(--color-done-foreground)'
+
 export function formatDate(value: string | null): string {
   if (!value) return '—'
   return new Date(value).toLocaleDateString('en-US', {
