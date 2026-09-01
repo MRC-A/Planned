@@ -1,6 +1,6 @@
 // Thin fetch wrapper around the backend task API — converts between the
 // backend's snake_case/comma-separated shape and the frontend Task type.
-import type { Task, TaskPriority, TaskStatus } from '@/types/task'
+import type { Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
 
 const API_BASE = '/api/tasks'
 
@@ -39,12 +39,6 @@ function fromApi(raw: ApiTask): Task {
     updatedAt: raw.updated_at,
   }
 }
-
-export type TaskDraft = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>> & {
-  title: string
-}
-
-type TaskPatch = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>
 
 function toApiPayload(draft: TaskPatch): Record<string, unknown> {
   const payload: Record<string, unknown> = {}

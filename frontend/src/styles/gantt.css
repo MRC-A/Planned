@@ -1,0 +1,30 @@
+/* Theme frappe-gantt's CSS custom properties with the app's shadcn design
+   tokens, instead of its built-in light/dark palette (we don't use its
+   data-theme convention). */
+
+:root {
+  --g-header-background: var(--color-card);
+  --g-row-color: var(--color-card);
+  --g-row-border-color: var(--color-border);
+  --g-border-color: var(--color-border);
+  --g-tick-color: var(--color-border);
+  --g-tick-color-thick: var(--color-muted-foreground);
+  --g-text-dark: var(--color-foreground);
+  --g-text-light: var(--color-primary-foreground);
+  --g-text-muted: var(--color-muted-foreground);
+  --g-bar-color: var(--color-muted);
+  --g-bar-border: var(--color-border);
+  --g-progress-color: var(--color-primary);
+  --g-expected-progress: var(--color-accent);
+  --g-handle-color: var(--color-foreground);
+  --g-arrow-color: var(--color-muted-foreground);
+  --g-today-highlight: var(--color-primary);
+  --g-weekend-highlight-color: var(--color-muted);
+  --g-weekend-label-color: var(--color-muted);
+  --g-actions-background: var(--color-secondary);
+  --g-popup-actions: var(--color-secondary);
+}
+
+.gantt-container {
+  border: 1px solid var(--color-border);
+}

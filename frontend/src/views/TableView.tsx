@@ -19,7 +19,7 @@ import {
   STATUS_LABEL,
   formatDate,
 } from '@/lib/task-display'
-import type { Task, TaskStatus } from '@/types/task'
+import type { Task, TaskDraft, TaskStatus } from '@/types/task'
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   todo: 'in_progress',
@@ -31,7 +31,7 @@ interface TableViewProps {
   tasks: Task[]
   loading: boolean
   error: string | null
-  onCreate: (draft: { title: string; priority: Task['priority']; dueDate: string | null }) => Promise<void>
+  onCreate: (draft: TaskDraft) => Promise<void>
   onCycleStatus: (task: Task) => void
   onDelete: (id: number) => void
 }
@@ -48,7 +48,7 @@ export default function TableView({ tasks, loading, error, onCreate, onCycleStat
         <p className="text-sm text-muted-foreground">
           {loading ? 'Loading…' : `${tasks.length} task${tasks.length === 1 ? '' : 's'}`}
         </p>
-        <NewTaskDialog onCreate={onCreate} />
+        <NewTaskDialog tasks={tasks} onCreate={onCreate} />
       </div>
 
       {error && (

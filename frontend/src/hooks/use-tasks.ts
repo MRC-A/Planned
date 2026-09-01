@@ -2,8 +2,8 @@
 // success. Deliberately simple (refetch over optimistic updates) since the
 // task list is small and local.
 import { useCallback, useEffect, useState } from 'react'
-import { createTask, deleteTask, listTasks, updateTask, type TaskDraft } from '@/lib/api'
-import type { Task } from '@/types/task'
+import { createTask, deleteTask, listTasks, updateTask } from '@/lib/api'
+import type { Task, TaskDraft } from '@/types/task'
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([])

@@ -58,8 +58,8 @@ export default function App() {
             />
           )}
           {view === 'todo' && <TodoView tasks={tasks} loading={loading} onToggleDone={toggleDone} />}
-          {view === 'calendar' && <CalendarView />}
-          {view === 'gantt' && <GanttView />}
+          {view === 'calendar' && <CalendarView tasks={tasks} />}
+          {view === 'gantt' && <GanttView tasks={tasks} />}
         </div>
       </main>
       <ChatPanel />

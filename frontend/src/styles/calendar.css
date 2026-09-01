@@ -1,0 +1,48 @@
+/* Theme FullCalendar's default DOM classes with the app's shadcn design
+   tokens (see src/index.css's @theme inline block for the --color-* vars). */
+
+.fc {
+  --fc-border-color: var(--color-border);
+  --fc-neutral-bg-color: var(--color-muted);
+  --fc-page-bg-color: transparent;
+  --fc-today-bg-color: color-mix(in oklch, var(--color-primary) 8%, transparent);
+  font-family: var(--font-sans);
+}
+
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number {
+  color: var(--color-foreground);
+  text-decoration: none;
+  padding: 0.35rem;
+}
+
+.fc .fc-day-other .fc-daygrid-day-number {
+  color: var(--color-muted-foreground);
+}
+
+.fc .fc-toolbar-title {
+  color: var(--color-foreground);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.fc .fc-button {
+  background: var(--color-secondary);
+  border: none;
+  color: var(--color-secondary-foreground);
+  text-transform: none;
+  box-shadow: none !important;
+}
+
+.fc .fc-button:hover {
+  background: var(--color-muted);
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+
+.fc .fc-daygrid-day-frame:hover {
+  background: color-mix(in oklch, var(--color-muted) 60%, transparent);
+}

@@ -20,3 +20,12 @@ export interface Task {
   createdAt: string
   updatedAt: string
 }
+
+// Payload for creating a task: every field but the server-owned ones,
+// title required, everything else optional.
+export type TaskDraft = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>> & {
+  title: string
+}
+
+// Payload for a partial update — every field optional.
+export type TaskPatch = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>
