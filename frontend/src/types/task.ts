@@ -16,6 +16,7 @@ export interface Task {
   durationHours: number | null
   progress: number
   dependsOn: number | null
+  parentId: number | null
   tags: string[]
   createdAt: string
   updatedAt: string

@@ -36,6 +36,7 @@ class Task(SQLModel, table=True):
     duration_hours: Optional[float] = None
     progress: float = 0  # percentage, 0-100
     depends_on: Optional[int] = Field(default=None, foreign_key="task.id")
+    parent_id: Optional[int] = Field(default=None, foreign_key="task.id")
     tags: Optional[str] = None  # comma-separated for now; TODO: proper many-to-many
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -53,6 +54,7 @@ class TaskCreate(SQLModel):
     duration_hours: Optional[float] = None
     progress: float = 0
     depends_on: Optional[int] = None
+    parent_id: Optional[int] = None
     tags: Optional[str] = None
 
 
@@ -68,4 +70,5 @@ class TaskUpdate(SQLModel):
     duration_hours: Optional[float] = None
     progress: Optional[float] = None
     depends_on: Optional[int] = None
+    parent_id: Optional[int] = None
     tags: Optional[str] = None

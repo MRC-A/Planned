@@ -1,6 +1,7 @@
-// Month calendar: each task appears on its start–due range (or a single
-// day if it only has one of the two dates). Tasks with neither date can't
-// be placed and are simply not shown.
+// Month calendar: each top-level task appears on its start–due range (or a
+// single day if it only has one of the two dates). Subtasks never appear
+// here (only in Table, when expanded, and in To-Do) — see CLAUDE.md.
+// Tasks with neither date can't be placed and are simply not shown.
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import type { EventContentArg } from '@fullcalendar/core'
@@ -44,8 +45,9 @@ function renderEventContent(arg: EventContentArg) {
 }
 
 export default function CalendarView({ tasks }: CalendarViewProps) {
-  const events = toEvents(tasks)
-  const unscheduled = tasks.length - events.length
+  const topLevel = tasks.filter((t) => t.parentId === null)
+  const events = toEvents(topLevel)
+  const unscheduled = topLevel.length - events.length
 
   return (
     <div className="flex flex-col gap-2">

@@ -34,6 +34,7 @@ interface TaskFormDialogProps {
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 const STATUSES: TaskStatus[] = ['todo', 'in_progress', 'done']
 const NO_DEPENDENCY = 'none'
+const NO_PARENT = 'none'
 
 interface FormState {
   title: string
@@ -45,6 +46,7 @@ interface FormState {
   durationHours: string
   progress: string
   dependsOn: string
+  parentId: string
   tags: string
 }
 
@@ -58,6 +60,7 @@ const EMPTY_FORM: FormState = {
   durationHours: '',
   progress: '0',
   dependsOn: NO_DEPENDENCY,
+  parentId: NO_PARENT,
   tags: '',
 }
 
@@ -75,6 +78,7 @@ function toFormState(task: Task | undefined): FormState {
     durationHours: task.durationHours !== null ? String(task.durationHours) : '',
     progress: String(task.progress),
     dependsOn: task.dependsOn !== null ? String(task.dependsOn) : NO_DEPENDENCY,
+    parentId: task.parentId !== null ? String(task.parentId) : NO_PARENT,
     tags: task.tags.join(', '),
   }
 }
@@ -111,6 +115,7 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
         durationHours: form.durationHours ? Number(form.durationHours) : null,
         progress: form.progress ? Number(form.progress) : 0,
         dependsOn: form.dependsOn === NO_DEPENDENCY ? null : Number(form.dependsOn),
+        parentId: form.parentId === NO_PARENT ? null : Number(form.parentId),
         tags: form.tags
           .split(',')
           .map((t) => t.trim())
@@ -243,6 +248,27 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
                 <SelectItem value={NO_DEPENDENCY}>None</SelectItem>
                 {tasks
                   .filter((t) => t.id !== task?.id)
+                  .map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.title}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="task-parent">Parent task</Label>
+            <Select value={form.parentId} onValueChange={(v) => set('parentId', v)}>
+              <SelectTrigger id="task-parent" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_PARENT}>None — top-level task</SelectItem>
+                {tasks
+                  // Exclude the task itself and its own direct children —
+                  // both would create an immediate parent/child cycle.
+                  .filter((t) => t.id !== task?.id && t.parentId !== task?.id)
                   .map((t) => (
                     <SelectItem key={t.id} value={String(t.id)}>
                       {t.title}

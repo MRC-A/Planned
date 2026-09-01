@@ -122,8 +122,11 @@ export default function GanttView({ tasks }: GanttViewProps) {
   const [scale, setScale] = useState<Scale>('Week')
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const scheduled = useMemo(() => tasks.filter((t) => t.startDate || t.dueDate), [tasks])
-  const unscheduled = tasks.length - scheduled.length
+  // Subtasks never appear here (only in Table, when expanded, and in
+  // To-Do) — see CLAUDE.md.
+  const topLevel = useMemo(() => tasks.filter((t) => t.parentId === null), [tasks])
+  const scheduled = useMemo(() => topLevel.filter((t) => t.startDate || t.dueDate), [topLevel])
+  const unscheduled = topLevel.length - scheduled.length
 
   const { rows, rangeStart, totalDays, todayOffset } = useMemo(() => {
     if (scheduled.length === 0) {
