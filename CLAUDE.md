@@ -76,6 +76,10 @@ There is no lint tooling configured yet (the `lint` script in `package.json` ref
 
 Run both servers to use the app: the backend on port 8000, the frontend dev server on 5173 (proxies `/api` to the backend).
 
+### Daily use (Windows)
+
+`scripts/start-planned.bat` starts both servers (each in its own window — close a window or Ctrl+C in it to stop that server) and opens the app in the browser. It force-frees ports 5173/8000 first, so it's safe to double-click again even if a previous run is still hanging around. A desktop shortcut ("Planned") points to it. Assumes `backend/.venv` and `frontend/node_modules` already exist (first-time setup still needs the manual install commands above).
+
 ## Commit workflow
 
 - Before committing, check whether this file needs updating (new architecture, convention, or command) and fold the update into the same commit.
