@@ -64,9 +64,9 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
     const isExpanded = expanded.has(task.id)
 
     return (
-      <TableRow key={task.id} className={isSubtask ? 'bg-muted/30' : undefined}>
+      <TableRow key={task.id} className={isSubtask ? 'bg-muted/30 text-xs' : undefined}>
         <TableCell className="font-medium text-foreground">
-          <div className="flex items-center gap-1" style={isSubtask ? { paddingLeft: '1.25rem' } : undefined}>
+          <div className="flex items-center gap-1" style={isSubtask ? { paddingLeft: '2rem' } : undefined}>
             {!isSubtask && children.length > 0 ? (
               <button
                 onClick={() => toggleExpanded(task.id)}
