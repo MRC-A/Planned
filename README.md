@@ -1,10 +1,10 @@
 # Planned
 
-Planned est une application de gestion de tâches et de projets qui unifie plusieurs vues — liste de tâches, calendrier, diagramme de Gantt — autour d'une même donnée de base. Plutôt que de remplir manuellement chaque vue, l'utilisateur discute avec un LLM local (LM Studio, Ollama) qui crée, organise et planifie les tâches dans le temps en tenant compte des deadlines et des contraintes.
+Planned is a task and project management application that unifies multiple views — to-do list, calendar, Gantt chart — around the same underlying data. Instead of filling in each view by hand, the user chats with a local LLM that creates, organizes, and schedules tasks over time, taking deadlines and constraints into account.
 
-## Fonctionnalités visées
+## Planned features
 
-- **Vues multiples synchronisées** : to-do list, calendrier et Gantt affichant et modifiant les mêmes tâches.
-- **Planification assistée par LLM** : conversation en langage naturel pour créer, ajuster et replanifier les tâches.
-- **Gestion des deadlines et contraintes** : prise en compte automatique des échéances et dépendances lors de la planification.
-- **LLM local** : connexion à un modèle exécuté localement (LM Studio, Ollama), sans dépendance à un service cloud.
+- **Synchronized multiple views**: to-do list, calendar, and Gantt chart displaying and editing the same tasks.
+- **LLM-assisted planning**: natural language conversation to create, adjust, and reschedule tasks.
+- **Deadline and constraint handling**: automatic accounting for due dates and dependencies when scheduling.
+- **Local LLM**: connects to a locally-run model (LM Studio, Ollama), with no dependency on a cloud service.
