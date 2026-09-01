@@ -17,6 +17,23 @@ export const PRIORITY_BADGE_VARIANT: Record<TaskPriority, 'outline' | 'secondary
   urgent: 'destructive',
 }
 
+// Real CSS color values (not Tailwind classes) for contexts that need one —
+// e.g. FullCalendar's event backgroundColor/textColor props. Kept in sync
+// with PRIORITY_BADGE_VARIANT's palette.
+export const PRIORITY_BG_COLOR: Record<TaskPriority, string> = {
+  low: 'var(--color-muted)',
+  medium: 'var(--color-secondary)',
+  high: 'var(--color-primary)',
+  urgent: 'var(--color-destructive)',
+}
+
+export const PRIORITY_TEXT_COLOR: Record<TaskPriority, string> = {
+  low: 'var(--color-foreground)',
+  medium: 'var(--color-secondary-foreground)',
+  high: 'var(--color-primary-foreground)',
+  urgent: 'var(--color-primary-foreground)',
+}
+
 // Higher number = more urgent, for sorting.
 export const PRIORITY_WEIGHT: Record<TaskPriority, number> = {
   urgent: 3,

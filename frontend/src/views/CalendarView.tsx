@@ -4,8 +4,7 @@
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import type { EventContentArg } from '@fullcalendar/core'
-import { Badge } from '@/components/ui/badge'
-import { PRIORITY_BADGE_VARIANT } from '@/lib/task-display'
+import { PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
 import '@/styles/calendar.css'
 import type { Task } from '@/types/task'
 
@@ -33,19 +32,15 @@ function toEvents(tasks: Task[]) {
         start,
         end,
         allDay: true,
-        extendedProps: { task: t },
+        backgroundColor: PRIORITY_BG_COLOR[t.priority],
+        borderColor: PRIORITY_BG_COLOR[t.priority],
+        textColor: PRIORITY_TEXT_COLOR[t.priority],
       }
     })
 }
 
 function renderEventContent(arg: EventContentArg) {
-  const task = arg.event.extendedProps.task as Task
-  return (
-    <div className="flex items-center gap-1 overflow-hidden px-0.5 py-px">
-      <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]} className="h-1.5 w-1.5 shrink-0 rounded-full p-0" />
-      <span className="truncate text-xs text-foreground">{arg.event.title}</span>
-    </div>
-  )
+  return <span className="truncate px-1 text-xs">{arg.event.title}</span>
 }
 
 export default function CalendarView({ tasks }: CalendarViewProps) {

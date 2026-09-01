@@ -53,6 +53,7 @@ export default function App() {
               loading={loading}
               error={error}
               onCreate={add}
+              onEdit={edit}
               onCycleStatus={cycleStatus}
               onDelete={remove}
             />

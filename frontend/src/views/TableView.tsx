@@ -1,6 +1,6 @@
 // The main view: one row per task with every field the other views rely
 // on (status, priority, dates, duration, progress, dependencies, tags).
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import NewTaskDialog from '@/components/new-task-dialog'
+import TaskFormDialog from '@/components/task-form-dialog'
 import {
   PRIORITY_BADGE_VARIANT,
   PRIORITY_LABEL,
@@ -19,7 +19,7 @@ import {
   STATUS_LABEL,
   formatDate,
 } from '@/lib/task-display'
-import type { Task, TaskDraft, TaskStatus } from '@/types/task'
+import type { Task, TaskDraft, TaskPatch, TaskStatus } from '@/types/task'
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   todo: 'in_progress',
@@ -32,6 +32,7 @@ interface TableViewProps {
   loading: boolean
   error: string | null
   onCreate: (draft: TaskDraft) => Promise<void>
+  onEdit: (id: number, patch: TaskPatch) => Promise<void>
   onCycleStatus: (task: Task) => void
   onDelete: (id: number) => void
 }
@@ -41,14 +42,14 @@ function taskTitle(tasks: Task[], id: number | null): string | null {
   return tasks.find((t) => t.id === id)?.title ?? `#${id}`
 }
 
-export default function TableView({ tasks, loading, error, onCreate, onCycleStatus, onDelete }: TableViewProps) {
+export default function TableView({ tasks, loading, error, onCreate, onEdit, onCycleStatus, onDelete }: TableViewProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {loading ? 'Loading…' : `${tasks.length} task${tasks.length === 1 ? '' : 's'}`}
         </p>
-        <NewTaskDialog tasks={tasks} onCreate={onCreate} />
+        <TaskFormDialog tasks={tasks} onSubmit={onCreate} trigger={<Button size="sm">New task</Button>} />
       </div>
 
       {error && (
@@ -104,9 +105,21 @@ export default function TableView({ tasks, loading, error, onCreate, onCycleStat
                 </TableCell>
                 <TableCell className="text-muted-foreground">{formatDate(task.updatedAt)}</TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="icon-sm" onClick={() => onDelete(task.id)} title="Delete task">
-                    <Trash2 className="text-muted-foreground" />
-                  </Button>
+                  <div className="flex">
+                    <TaskFormDialog
+                      tasks={tasks}
+                      task={task}
+                      onSubmit={(values) => onEdit(task.id, values)}
+                      trigger={
+                        <Button variant="ghost" size="icon-sm" title="Edit task">
+                          <Pencil className="text-muted-foreground" />
+                        </Button>
+                      }
+                    />
+                    <Button variant="ghost" size="icon-sm" onClick={() => onDelete(task.id)} title="Delete task">
+                      <Trash2 className="text-muted-foreground" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
