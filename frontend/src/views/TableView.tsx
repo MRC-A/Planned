@@ -35,7 +35,7 @@ interface TableViewProps {
   tasks: Task[]
   loading: boolean
   error: string | null
-  onCreate: (draft: TaskDraft) => Promise<void>
+  onCreate: (draft: TaskDraft) => Promise<unknown>
   onEdit: (id: number, patch: TaskPatch) => Promise<void>
   onCycleStatus: (task: Task) => void
   onDelete: (id: number) => void

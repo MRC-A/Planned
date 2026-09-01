@@ -6,10 +6,23 @@ import { Textarea } from '@/components/ui/textarea'
 import { shutdownApp } from '@/lib/api'
 import { useChat } from '@/hooks/use-chat'
 import { PRIORITY_BADGE_VARIANT, PRIORITY_LABEL, formatDate } from '@/lib/task-display'
-import type { ProposedTask, TaskDraft } from '@/types/task'
+import type { ProposedTask, Task, TaskDraft } from '@/types/task'
 
 interface ChatPanelProps {
-  onCreateTask: (draft: TaskDraft) => Promise<void>
+  onCreateTask: (draft: TaskDraft) => Promise<Task>
+}
+
+function toDraft(t: ProposedTask, parentId: number | null): TaskDraft {
+  return {
+    title: t.title,
+    description: t.description,
+    priority: t.priority,
+    startDate: t.startDate,
+    dueDate: t.dueDate,
+    durationHours: t.durationHours,
+    tags: t.tags,
+    parentId,
+  }
 }
 
 export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
@@ -56,8 +69,20 @@ export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
     setApplyingIndex(index)
     setProposalError(null)
     try {
-      for (const task of tasks) {
-        await onCreateTask(task)
+      // Two passes: top-level tasks first, so their real (database) ids
+      // are known before creating any subtask that references them —
+      // parentRef is just an index into this proposal batch, not a real id.
+      const realIdByRef = new Map<number, number>()
+      for (let i = 0; i < tasks.length; i++) {
+        if (tasks[i].parentRef !== null) continue
+        const created = await onCreateTask(toDraft(tasks[i], null))
+        realIdByRef.set(i, created.id)
+      }
+      for (let i = 0; i < tasks.length; i++) {
+        const ref = tasks[i].parentRef
+        if (ref === null) continue
+        const parentId = realIdByRef.get(ref) ?? null
+        await onCreateTask(toDraft(tasks[i], parentId))
       }
       setResolvedProposals((prev) => new Set(prev).add(index))
     } catch (err) {
@@ -110,9 +135,14 @@ export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
                 <div className="rounded-lg border border-border bg-background p-3">
                   <ul className="flex flex-col gap-2">
                     {m.proposedTasks.map((t, ti) => (
-                      <li key={ti} className="flex flex-col gap-0.5">
+                      <li
+                        key={ti}
+                        className={`flex flex-col gap-0.5 ${t.parentRef !== null ? 'pl-4 text-[11px]' : ''}`}
+                      >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium text-foreground">{t.title}</span>
+                          <span className={`font-medium text-foreground ${t.parentRef !== null ? '' : 'text-xs'}`}>
+                            {t.title}
+                          </span>
                           <Badge variant={PRIORITY_BADGE_VARIANT[t.priority]}>{PRIORITY_LABEL[t.priority]}</Badge>
                         </div>
                         {(t.startDate || t.dueDate) && (

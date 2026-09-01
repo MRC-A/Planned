@@ -109,6 +109,7 @@ interface ApiProposedTask {
   due_date: string | null
   duration_hours: number | null
   tags: string[]
+  parent_ref: number | null
 }
 
 interface ApiChatResponse {
@@ -125,6 +126,7 @@ function proposedTaskFromApi(raw: ApiProposedTask): ProposedTask {
     dueDate: raw.due_date,
     durationHours: raw.duration_hours,
     tags: raw.tags,
+    parentRef: raw.parent_ref,
   }
 }
 

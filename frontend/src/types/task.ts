@@ -42,4 +42,8 @@ export interface ProposedTask {
   dueDate: string | null
   durationHours: number | null
   tags: string[]
+  // 0-based index into the same proposal batch this task belongs to — set
+  // when the assistant proposes this as a subtask of another task in the
+  // same reply. Null for a standalone/top-level proposal.
+  parentRef: number | null
 }

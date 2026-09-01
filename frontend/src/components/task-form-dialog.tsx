@@ -28,7 +28,7 @@ interface TaskFormDialogProps {
   tasks: Task[]
   task?: Task
   trigger: React.ReactNode
-  onSubmit: (values: TaskDraft) => Promise<void>
+  onSubmit: (values: TaskDraft) => Promise<unknown>
 }
 
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent']

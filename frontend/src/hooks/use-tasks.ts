@@ -28,8 +28,9 @@ export function useTasks() {
 
   const add = useCallback(
     async (draft: TaskDraft) => {
-      await createTask(draft)
+      const task = await createTask(draft)
       await refresh()
+      return task
     },
     [refresh],
   )
