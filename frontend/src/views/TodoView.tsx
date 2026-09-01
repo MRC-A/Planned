@@ -1,5 +1,7 @@
 // Simplified, priority-first view of the same shared tasks: what should I
-// work on next? Completed tasks are pushed to the bottom either way.
+// work on next? Completed tasks are hidden by default (see
+// hooks/use-show-completed.ts); when shown via the toggle, they sink to
+// the bottom and render strikethrough instead of being filtered out.
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -10,6 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import ShowCompletedToggle from '@/components/show-completed-toggle'
+import { useShowCompleted } from '@/hooks/use-show-completed'
 import { PRIORITY_BADGE_VARIANT, PRIORITY_LABEL, PRIORITY_WEIGHT, formatDate } from '@/lib/task-display'
 import type { Task } from '@/types/task'
 
@@ -30,8 +34,14 @@ function compareByDueDate(a: Task, b: Task): number {
 
 export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps) {
   const [sortMode, setSortMode] = useState<SortMode>('priority')
+  const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('todo')
 
-  const sorted = [...tasks].sort((a, b) => {
+  // Hidden by default (see hooks/use-show-completed.ts). When shown, keep
+  // the existing sink-to-bottom + strikethrough treatment below.
+  const visible = showCompleted ? tasks : tasks.filter((t) => t.status !== 'done')
+  const hiddenCount = tasks.length - visible.length
+
+  const sorted = [...visible].sort((a, b) => {
     if (a.status === 'done' && b.status !== 'done') return 1
     if (a.status !== 'done' && b.status === 'done') return -1
     return sortMode === 'priority'
@@ -42,6 +52,7 @@ export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
+        <ShowCompletedToggle showCompleted={showCompleted} hiddenCount={hiddenCount} onToggle={toggleShowCompleted} />
         <span className="text-sm text-muted-foreground">Sort by</span>
         <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
           <SelectTrigger size="sm" className="w-36">
@@ -55,7 +66,14 @@ export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps
       </div>
 
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {!loading && sorted.length === 0 && <p className="text-sm text-muted-foreground">No tasks yet.</p>}
+      {!loading && sorted.length === 0 && tasks.length === 0 && (
+        <p className="text-sm text-muted-foreground">No tasks yet.</p>
+      )}
+      {!loading && sorted.length === 0 && tasks.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          Every task is completed — "Show completed" above will bring them back.
+        </p>
+      )}
 
       {!loading && sorted.length > 0 && (
         <ul className="flex flex-col gap-2">

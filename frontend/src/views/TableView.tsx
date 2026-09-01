@@ -15,7 +15,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import ShowCompletedToggle from '@/components/show-completed-toggle'
 import TaskFormDialog from '@/components/task-form-dialog'
+import { useShowCompleted } from '@/hooks/use-show-completed'
 import {
   PRIORITY_BADGE_VARIANT,
   PRIORITY_LABEL,
@@ -48,7 +50,14 @@ function taskTitle(tasks: Task[], id: number | null): string | null {
 
 export default function TableView({ tasks, loading, error, onCreate, onEdit, onCycleStatus, onDelete }: TableViewProps) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
-  const topLevel = tasks.filter((t) => t.parentId === null)
+  const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('table')
+
+  // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
+  // applied at both levels, so a done subtask doesn't linger under an
+  // expanded parent either.
+  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => t.status !== 'done')
+  const topLevel = visibleTasks.filter((t) => t.parentId === null)
+  const hiddenCount = tasks.length - visibleTasks.length
 
   function toggleExpanded(id: number) {
     setExpanded((prev) => {
@@ -60,7 +69,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
   }
 
   function renderRow(task: Task, isSubtask: boolean) {
-    const children = tasks.filter((t) => t.parentId === task.id)
+    const children = visibleTasks.filter((t) => t.parentId === task.id)
     const isExpanded = expanded.has(task.id)
 
     return (
@@ -131,9 +140,19 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {loading ? 'Loading…' : `${tasks.length} task${tasks.length === 1 ? '' : 's'}`}
+          {loading
+            ? 'Loading…'
+            : `${visibleTasks.length} task${visibleTasks.length === 1 ? '' : 's'}` +
+              (!showCompleted && hiddenCount > 0 ? ` (${hiddenCount} completed hidden)` : '')}
         </p>
-        <TaskFormDialog tasks={tasks} onSubmit={onCreate} trigger={<Button size="sm">New task</Button>} />
+        <div className="flex items-center gap-2">
+          <ShowCompletedToggle
+            showCompleted={showCompleted}
+            hiddenCount={hiddenCount}
+            onToggle={toggleShowCompleted}
+          />
+          <TaskFormDialog tasks={tasks} onSubmit={onCreate} trigger={<Button size="sm">New task</Button>} />
+        </div>
       </div>
 
       {error && (
@@ -161,7 +180,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           </TableHeader>
           <TableBody>
             {topLevel.map((task) => {
-              const children = tasks.filter((t) => t.parentId === task.id)
+              const children = visibleTasks.filter((t) => t.parentId === task.id)
               return (
                 <Fragment key={task.id}>
                   {renderRow(task, false)}
@@ -173,6 +192,13 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
               <TableRow>
                 <TableCell colSpan={11} className="text-center text-muted-foreground">
                   No tasks yet — create one to get started.
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && tasks.length > 0 && topLevel.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
+                  Every task is completed — "Show completed" above will bring them back.
                 </TableCell>
               </TableRow>
             )}

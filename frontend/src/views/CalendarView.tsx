@@ -5,6 +5,8 @@
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import type { EventContentArg } from '@fullcalendar/core'
+import ShowCompletedToggle from '@/components/show-completed-toggle'
+import { useShowCompleted } from '@/hooks/use-show-completed'
 import { PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
 import '@/styles/calendar.css'
 import type { Task } from '@/types/task'
@@ -45,12 +47,26 @@ function renderEventContent(arg: EventContentArg) {
 }
 
 export default function CalendarView({ tasks }: CalendarViewProps) {
+  const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('calendar')
+
   const topLevel = tasks.filter((t) => t.parentId === null)
-  const events = toEvents(topLevel)
-  const unscheduled = topLevel.length - events.length
+  // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
+  // otherwise a finished task stays on the calendar forever, still colored
+  // as if it were still active.
+  const visible = showCompleted ? topLevel : topLevel.filter((t) => t.status !== 'done')
+  const hiddenCount = topLevel.length - visible.length
+  const events = toEvents(visible)
+  const unscheduled = visible.length - events.length
 
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-end">
+        <ShowCompletedToggle
+          showCompleted={showCompleted}
+          hiddenCount={hiddenCount}
+          onToggle={toggleShowCompleted}
+        />
+      </div>
       <div className="rounded-lg border border-border bg-card p-3">
         <FullCalendar
           plugins={[dayGridPlugin]}

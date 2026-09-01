@@ -11,6 +11,8 @@
 // Tasks with neither a start nor a due date can't be placed on a timeline
 // and are simply not shown (count surfaced below the chart).
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ShowCompletedToggle from '@/components/show-completed-toggle'
+import { useShowCompleted } from '@/hooks/use-show-completed'
 import type { Task, TaskPriority } from '@/types/task'
 
 interface GanttViewProps {
@@ -121,12 +123,20 @@ function buildGroups(scale: Scale, rangeStart: Date, totalDays: number): HeaderG
 export default function GanttView({ tasks }: GanttViewProps) {
   const [scale, setScale] = useState<Scale>('Week')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('gantt')
 
   // Subtasks never appear here (only in Table, when expanded, and in
   // To-Do) — see CLAUDE.md.
   const topLevel = useMemo(() => tasks.filter((t) => t.parentId === null), [tasks])
-  const scheduled = useMemo(() => topLevel.filter((t) => t.startDate || t.dueDate), [topLevel])
-  const unscheduled = topLevel.length - scheduled.length
+  // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
+  // otherwise a finished task's bar sits on the timeline forever.
+  const visible = useMemo(
+    () => (showCompleted ? topLevel : topLevel.filter((t) => t.status !== 'done')),
+    [topLevel, showCompleted],
+  )
+  const hiddenCount = topLevel.length - visible.length
+  const scheduled = useMemo(() => visible.filter((t) => t.startDate || t.dueDate), [visible])
+  const unscheduled = visible.length - scheduled.length
 
   const { rows, rangeStart, totalDays, todayOffset } = useMemo(() => {
     if (scheduled.length === 0) {
@@ -177,7 +187,12 @@ export default function GanttView({ tasks }: GanttViewProps) {
     e.preventDefault()
   }
 
-  if (scheduled.length === 0) {
+  // Whether there's genuinely nothing to plot, independent of the
+  // completed-tasks filter — vs. everything dated being done and hidden,
+  // where the toggle below (needed to undo that) must still render.
+  const noDatedTasksAtAll = topLevel.filter((t) => t.startDate || t.dueDate).length === 0
+
+  if (noDatedTasksAtAll) {
     return (
       <p className="text-sm text-muted-foreground">
         No dated tasks to display yet — give a task a start or due date to see it here.
@@ -188,6 +203,11 @@ export default function GanttView({ tasks }: GanttViewProps) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-end gap-2">
+        <ShowCompletedToggle
+          showCompleted={showCompleted}
+          hiddenCount={hiddenCount}
+          onToggle={toggleShowCompleted}
+        />
         <button
           onClick={scrollToToday}
           disabled={!showTodayMarker}
@@ -210,45 +230,51 @@ export default function GanttView({ tasks }: GanttViewProps) {
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        onWheel={handleWheel}
-        className="overflow-x-auto rounded-lg border border-border"
-      >
+      {scheduled.length === 0 ? (
+        <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+          Every dated task is completed — "Show completed" above will bring them back.
+        </p>
+      ) : (
         <div
-          className="grid"
-          style={{
-            gridTemplateColumns: `${LABEL_WIDTH}px repeat(${totalDays}, ${pxPerDay}px)`,
-            gridTemplateRows: `${HEADER_HEIGHT}px repeat(${rows.length}, ${ROW_HEIGHT}px)`,
-            width: LABEL_WIDTH + totalDays * pxPerDay,
-          }}
+          ref={scrollRef}
+          onWheel={handleWheel}
+          className="overflow-x-auto rounded-lg border border-border"
         >
           <div
-            className="sticky left-0 z-20 border-r border-b border-border bg-card"
-            style={{ gridRow: 1, gridColumn: 1 }}
-          />
-          {groups.map((g) => (
+            className="grid"
+            style={{
+              gridTemplateColumns: `${LABEL_WIDTH}px repeat(${totalDays}, ${pxPerDay}px)`,
+              gridTemplateRows: `${HEADER_HEIGHT}px repeat(${rows.length}, ${ROW_HEIGHT}px)`,
+              width: LABEL_WIDTH + totalDays * pxPerDay,
+            }}
+          >
             <div
-              key={g.startOffset}
-              className="flex items-center justify-center overflow-hidden border-r border-b border-border px-1 text-[11px] text-foreground"
-              style={{ gridRow: 1, gridColumn: `${g.startOffset + 2} / span ${g.spanDays}` }}
-            >
-              <span className="truncate">{g.label}</span>
-            </div>
-          ))}
-
-          {showTodayMarker && (
-            <div
-              className="pointer-events-none justify-self-center bg-primary/60"
-              style={{ gridRow: `1 / span ${rows.length + 1}`, gridColumn: todayOffset + 2, width: 2 }}
+              className="sticky left-0 z-20 border-r border-b border-border bg-card"
+              style={{ gridRow: 1, gridColumn: 1 }}
             />
-          )}
+            {groups.map((g) => (
+              <div
+                key={g.startOffset}
+                className="flex items-center justify-center overflow-hidden border-r border-b border-border px-1 text-[11px] text-foreground"
+                style={{ gridRow: 1, gridColumn: `${g.startOffset + 2} / span ${g.spanDays}` }}
+              >
+                <span className="truncate">{g.label}</span>
+              </div>
+            ))}
 
-          {rows.map((row, i) => (
-            <GanttBarRow key={row.task.id} row={row} rowIndex={i + 2} groups={groups} />
-          ))}
+            {showTodayMarker && (
+              <div
+                className="pointer-events-none justify-self-center bg-primary/60"
+                style={{ gridRow: `1 / span ${rows.length + 1}`, gridColumn: todayOffset + 2, width: 2 }}
+              />
+            )}
+
+            {rows.map((row, i) => (
+              <GanttBarRow key={row.task.id} row={row} rowIndex={i + 2} groups={groups} />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {unscheduled > 0 && (
         <p className="text-xs text-muted-foreground">
