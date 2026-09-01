@@ -15,32 +15,36 @@ Monorepo with two independent projects:
 - `backend/` — FastAPI + SQLModel/SQLite (Python), package `planned` under `backend/src/planned/`.
 - `frontend/` — React + TypeScript + Tailwind v4 + shadcn/ui (Vite), under `frontend/src/`.
 
-They are not yet wired together: the frontend currently renders from `frontend/src/data/mock-tasks.ts`, not from the backend API.
+The frontend is wired to the backend over HTTP (see below) — there is no more mock data.
 
 ### Shared data model
 
-`backend/src/planned/models.py::Task` is the single source of truth for what a task is (title, status, priority, start/due dates, duration, progress, dependency, tags, timestamps). `frontend/src/types/task.ts` mirrors it by hand — when a field is added/renamed on one side, update the other. Every view reads from this same shape:
+`backend/src/planned/models.py::Task` is the single source of truth for what a task is (title, status, priority, start/due dates, duration, progress, dependency, tags, timestamps). `frontend/src/types/task.ts` mirrors it by hand (camelCase, `tags` as `string[]`) — when a field is added/renamed on one side, update the other and `frontend/src/lib/api.ts`'s `fromApi`/`toApiPayload` converters. Every view reads from this same shape:
 
-- **Table** (`frontend/src/views/TableView.tsx`) — the main view: one row per task, every field exposed. This is the exhaustive view; other views only surface a subset.
-- **To-Do** (`frontend/src/views/TodoView.tsx`) — simplified, priority-first list (sorted by `PRIORITY_WEIGHT`, done tasks sink to the bottom).
+- **Table** (`frontend/src/views/TableView.tsx`) — the main view: one row per task, every field exposed. This is the exhaustive view; other views only surface a subset. Supports creating a task (`NewTaskDialog`), cycling status by clicking the status badge, and deleting a row.
+- **To-Do** (`frontend/src/views/TodoView.tsx`) — simplified, priority-first list (sorted by `PRIORITY_WEIGHT`, done tasks sink to the bottom). The checkbox toggles status between `done` and `todo`.
 - **Calendar** / **Gantt** — placeholders (`CalendarView.tsx`, `GanttView.tsx`), not yet implemented.
 
 Shared display helpers (priority/status labels, badge variants, date formatting) live in `frontend/src/lib/task-display.ts` — use these rather than re-deriving labels/colors per view.
 
+`App.tsx` owns the single `useTasks()` call (`frontend/src/hooks/use-tasks.ts`) and passes `tasks`/`loading`/`error` plus `add`/`edit`/`remove` callbacks down to the views as props — views themselves don't fetch. `use-tasks` refetches the full list after every mutation rather than updating state optimistically; fine while the list is small and local.
+
 ### Backend
 
 - `main.py` — FastAPI app, CORS for the Vite dev server (`http://localhost:5173`), mounts routers, runs `init_db()` on startup.
-- `db.py` — SQLite engine; DB file lives at `~/.planned/planned.db` (outside the repo).
-- `api/tasks.py` — task CRUD.
+- `db.py` — SQLite engine; DB file lives at `~/.planned/planned.db` (outside the repo). Dev DB, not seeded — delete the file to reset.
+- `api/tasks.py` — task CRUD: `GET /api/tasks/`, `POST /api/tasks/` (body: `TaskCreate`), `PATCH /api/tasks/{id}` (body: `TaskUpdate`, partial), `DELETE /api/tasks/{id}`. `TaskCreate`/`TaskUpdate` (in `models.py`) exclude server-owned fields (`id`, `created_at`, `updated_at`).
 - `api/chat.py` — chat endpoint, forwards messages to `llm/client.py::LocalLLMClient`.
 - `llm/client.py` — thin wrapper around the `openai` SDK pointed at a local base URL (LM Studio: `http://localhost:1234/v1`, Ollama: `http://localhost:11434/v1`); works for either since both expose an OpenAI-compatible chat-completions API. Tool-calling for task creation/scheduling is not implemented yet (see TODO in that file).
+- Dev venv lives at `backend/.venv` (gitignored); use `./.venv/Scripts/python.exe` (Windows) to run commands inside it without activating.
 
 ### Frontend
 
-- `App.tsx` — owns the active-view state and top nav; add new views here.
+- `App.tsx` — owns the active-view state, the shared task data (via `useTasks`), and the top nav; add new views here.
+- `lib/api.ts` — fetch wrapper for the task API; the only place that knows about the backend's snake_case JSON shape.
 - shadcn/ui is configured for Tailwind v4 (`components.json`, no `tailwind.config.ts` — theme tokens live in `src/index.css` via `@theme inline`). Add components with `npx shadcn@latest add <name>` from `frontend/`.
 - Path alias `@/*` → `frontend/src/*` (configured in both `tsconfig.json` and `vite.config.ts`).
-- `vite.config.ts` proxies `/api` to `http://localhost:8000` for future backend integration.
+- `vite.config.ts` proxies `/api` to `http://localhost:8000` — run the backend on port 8000 for the frontend dev server to reach it.
 
 ## Commands
 
@@ -63,6 +67,8 @@ npm run preview   # preview the production build
 ```
 
 There is no lint tooling configured yet (the `lint` script in `package.json` references `eslint`, which isn't installed).
+
+Run both servers to use the app: the backend on port 8000, the frontend dev server on 5173 (proxies `/api` to the backend).
 
 ## Commit workflow
 

@@ -39,3 +39,33 @@ class Task(SQLModel, table=True):
     tags: Optional[str] = None  # comma-separated for now; TODO: proper many-to-many
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TaskCreate(SQLModel):
+    """Payload for creating a task — every server-owned field is excluded."""
+
+    title: str
+    description: str = ""
+    status: TaskStatus = TaskStatus.TODO
+    priority: TaskPriority = TaskPriority.MEDIUM
+    start_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    duration_hours: Optional[float] = None
+    progress: float = 0
+    depends_on: Optional[int] = None
+    tags: Optional[str] = None
+
+
+class TaskUpdate(SQLModel):
+    """Payload for a partial update — every field optional, unset ones are left untouched."""
+
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[TaskStatus] = None
+    priority: Optional[TaskPriority] = None
+    start_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    duration_hours: Optional[float] = None
+    progress: Optional[float] = None
+    depends_on: Optional[int] = None
+    tags: Optional[str] = None

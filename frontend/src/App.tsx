@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import TableView from './views/TableView'
+import TableView, { NEXT_STATUS } from './views/TableView'
 import TodoView from './views/TodoView'
 import CalendarView from './views/CalendarView'
 import GanttView from './views/GanttView'
 import ChatPanel from './views/ChatPanel'
+import { useTasks } from './hooks/use-tasks'
+import type { Task } from './types/task'
 
 type ViewName = 'table' | 'todo' | 'calendar' | 'gantt'
 
@@ -16,6 +18,15 @@ const VIEWS: { id: ViewName; label: string }[] = [
 
 export default function App() {
   const [view, setView] = useState<ViewName>('table')
+  const { tasks, loading, error, add, edit, remove } = useTasks()
+
+  function cycleStatus(task: Task) {
+    edit(task.id, { status: NEXT_STATUS[task.status] })
+  }
+
+  function toggleDone(task: Task) {
+    edit(task.id, { status: task.status === 'done' ? 'todo' : 'done' })
+  }
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -36,8 +47,17 @@ export default function App() {
           ))}
         </nav>
         <div className="flex-1 overflow-auto p-6">
-          {view === 'table' && <TableView />}
-          {view === 'todo' && <TodoView />}
+          {view === 'table' && (
+            <TableView
+              tasks={tasks}
+              loading={loading}
+              error={error}
+              onCreate={add}
+              onCycleStatus={cycleStatus}
+              onDelete={remove}
+            />
+          )}
+          {view === 'todo' && <TodoView tasks={tasks} loading={loading} onToggleDone={toggleDone} />}
           {view === 'calendar' && <CalendarView />}
           {view === 'gantt' && <GanttView />}
         </div>
