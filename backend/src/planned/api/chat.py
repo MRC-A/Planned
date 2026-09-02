@@ -13,7 +13,7 @@ write anything.
 from datetime import date
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlmodel import Session, select
 
 from planned.db import engine
@@ -111,6 +111,7 @@ def _existing_tasks_summary() -> str:
         return "The user currently has no open tasks."
     by_id = {t.id: t for t in tasks}
     lines = []
+    tag_set: set[str] = set()
     for t in tasks:
         parent_note = ""
         if t.parent_id is not None and t.parent_id in by_id:
@@ -121,7 +122,16 @@ def _existing_tasks_summary() -> str:
             f"due: {t.due_date.date().isoformat() if t.due_date else 'none'}"
             f"{parent_note})"
         )
-    return "The user's current open tasks:\n" + "\n".join(lines)
+        if t.tags:
+            tag_set.update(tag.strip() for tag in t.tags.split(",") if tag.strip())
+    summary = "The user's current open tasks:\n" + "\n".join(lines)
+    # Shown so the model matches the user's existing tag style (short,
+    # lowercase) instead of inventing a different casing/format per task —
+    # baseline testing produced "Client Feature", "DevOps", "UI/UX" etc.
+    # mixed in with lowercase ones.
+    if tag_set:
+        summary += "\n\nTags already in use, for style reference: " + ", ".join(sorted(tag_set))
+    return summary
 
 
 def _sanitize_parent_refs(tasks: list[ProposedTask]) -> None:
@@ -139,21 +149,58 @@ def _sanitize_parent_refs(tasks: list[ProposedTask]) -> None:
 
 
 def _build_system_prompt() -> str:
+    today = date.today()
     return (
         "You are the assistant inside Planned, a task and project planning app. "
-        f"Today's date is {date.today().isoformat()}.\n\n"
+        "The user will often just paste in a raw request — a one-line ask, a "
+        "forwarded email, a Slack-style message — and expects you to turn it into "
+        "a well-specified task without being asked to elaborate. Extract the real "
+        "actionable ask from the noise (greetings, signatures, quoted context). "
+        "Planned tracks any kind of task, professional or personal, big or small — "
+        "the open tasks shown below happen to be software work, but that's just "
+        "this user's current backlog, not a scope limit. Never refuse or "
+        "deflect a legitimate request just because it's short, mundane, or "
+        "unrelated to software (e.g. 'buy bread' is a perfectly good task with a "
+        "small duration_hours estimate) — propose it like any other.\n\n"
+        f"Today is {today.strftime('%A')}, {today.isoformat()}.\n\n"
         f"{_existing_tasks_summary()}\n\n"
         "When the user asks you to create one or more tasks, call the propose_tasks "
-        "tool. If the request is really one project with sub-steps, propose one "
+        "tool — don't call it just to ask a clarifying question, and don't call it "
+        "more than once per reply. For EVERY proposed task, fill in as much of the "
+        "schema as you can reasonably infer, not just the title:\n"
+        "- description: required, never leave it empty. A short brief, in the same "
+        "language as the user's message, restating what actually needs to be done "
+        "plus any concrete detail the user gave (numbers, systems, people, "
+        "constraints) that doesn't fit in the title.\n"
+        "- duration_hours: required, your best-effort estimate of the realistic "
+        "workload in hours, based on the scope and complexity described. Give a "
+        "number even under uncertainty — a rough estimate beats null — and reach "
+        "for a round figure that reflects real effort (a small chore might be under "
+        "an hour; a scoped feature or report a few hours; a step of a larger "
+        "project several hours). Only leave it null if the task is so open-ended "
+        "there is truly nothing to base a number on. If one task's scope is big or "
+        "vague enough that a single estimate would be dishonest, that's a sign to "
+        "break it into subtasks (see below) and estimate each one instead.\n"
+        "- priority: infer from urgency cues in the message rather than defaulting "
+        "to medium — up for an explicit deadline, 'urgent'/'ASAP', a client or "
+        "manager waiting, a recurring problem; down (low) for an explicit "
+        "de-escalating cue like 'pas urgent', 'no rush', 'when you get a chance'.\n"
+        "- tags: short, lowercase, one or two words each — match the style of the "
+        "existing tags listed above rather than inventing a different "
+        "casing/format per task (e.g. not 'Client Feature' or 'UI/UX').\n\n"
+        "If the request is really one project with sub-steps, propose one "
         "top-level task plus subtasks rather than several unrelated top-level tasks: "
         "set parent_ref on each subtask to the 0-based index of its parent within "
         "the same tasks array (see the tool schema — this can't reference an "
-        "already-existing task, and only one level of subtasks is allowed). Try to "
-        "set sensible start_date/due_date that fit around the user's existing "
-        "deadlines and workload listed above; leave a date null rather than "
-        "inventing one if you truly have no basis for it. Dates must always be "
-        "absolute (YYYY-MM-DD), computed from today's date — never a relative phrase "
-        "like 'next Friday'. Keep replies concise."
+        "already-existing task, and only one level of subtasks is allowed).\n\n"
+        "Dates must always be absolute (YYYY-MM-DD) — never a relative phrase like "
+        "'next Friday'. When the user gives a relative date ('vendredi', 'ce "
+        "week-end', 'in two weeks'), work out the absolute date from today's actual "
+        "weekday above and double-check the arithmetic before answering — a wrong "
+        "day is worse than no date at all. Try to set sensible start_date/due_date "
+        "that fit around the user's existing deadlines and workload listed above; "
+        "leave a date null rather than inventing one if you truly have no basis for "
+        "it. Keep replies concise."
     )
 
 
@@ -172,8 +219,22 @@ def send_message(request: ChatRequest) -> ChatResponse:
     tool_call = result["tool_call"]
     if tool_call and tool_call["name"] == "propose_tasks":
         raw_tasks = tool_call["arguments"].get("tasks", [])
-        proposed = [ProposedTask.model_validate(t) for t in raw_tasks]
+        # The model occasionally emits a tool call missing a required field
+        # (e.g. no "title") — skip just that task rather than 500ing the
+        # whole reply, same "degrade, don't reject the batch" spirit as
+        # _sanitize_parent_refs above.
+        proposed = []
+        for t in raw_tasks:
+            try:
+                proposed.append(ProposedTask.model_validate(t))
+            except ValidationError:
+                continue
         _sanitize_parent_refs(proposed)
+        if not proposed:
+            return ChatResponse(
+                content=result["content"]
+                or "I couldn't put together a valid task from that — could you rephrase?"
+            )
         content = result["content"] or f"I'd suggest creating {len(proposed)} task(s) — review below."
         return ChatResponse(content=content, proposed_tasks=proposed)
 
