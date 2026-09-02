@@ -7,6 +7,7 @@ import { Fragment, useState } from 'react'
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import DeleteConfirmDialog from '@/components/delete-confirm-dialog'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
 import TaskDetailDialog from '@/components/task-detail-dialog'
 import TaskFormDialog from '@/components/task-form-dialog'
@@ -34,7 +36,7 @@ import {
   STATUS_LABEL,
   formatDate,
 } from '@/lib/task-display'
-import type { Task, TaskDraft, TaskPatch, TaskStatus } from '@/types/task'
+import type { Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   todo: 'in_progress',
@@ -94,7 +96,7 @@ interface TableViewProps {
   onCreate: (draft: TaskDraft) => Promise<unknown>
   onEdit: (id: number, patch: TaskPatch) => Promise<void>
   onCycleStatus: (task: Task) => void
-  onDelete: (id: number) => void
+  onDelete: (id: number) => Promise<void>
 }
 
 function taskTitle(tasks: Task[], id: number | null): string | null {
@@ -106,17 +108,45 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [sortMode, setSortMode] = useState<SortMode>('none')
   const [detailTask, setDetailTask] = useState<Task | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all')
+  const [priorityFilter, setPriorityFilter] = useState<'all' | TaskPriority>('all')
+  const [tagFilter, setTagFilter] = useState<'all' | string>('all')
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('table')
+
+  const allTags = Array.from(new Set(tasks.flatMap((t) => t.tags))).sort()
+  const filtersActive = search.trim() !== '' || statusFilter !== 'all' || priorityFilter !== 'all' || tagFilter !== 'all'
+
+  function clearFilters() {
+    setSearch('')
+    setStatusFilter('all')
+    setPriorityFilter('all')
+    setTagFilter('all')
+  }
 
   // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
   // applied at both levels, so a done subtask doesn't linger under an
-  // expanded parent either.
-  const visibleTasks = showCompleted ? tasks : tasks.filter((t) => t.status !== 'done')
+  // expanded parent either. Explicitly filtering to "Done" bypasses that
+  // default rather than silently showing nothing — the filter is a more
+  // deliberate signal than the toggle's default.
+  const showDone = showCompleted || statusFilter === 'done'
+  const visibleTasks = showDone ? tasks : tasks.filter((t) => t.status !== 'done')
+  const hiddenCount = tasks.length - visibleTasks.length
+
+  const filteredTasks = visibleTasks.filter((t) => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false
+    if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false
+    if (tagFilter !== 'all' && !t.tags.includes(tagFilter)) return false
+    const q = search.trim().toLowerCase()
+    if (q && !t.title.toLowerCase().includes(q) && !t.description.toLowerCase().includes(q)) return false
+    return true
+  })
   const topLevel = sortTasks(
-    visibleTasks.filter((t) => t.parentId === null),
+    filteredTasks.filter((t) => t.parentId === null),
     sortMode,
   )
-  const hiddenCount = tasks.length - visibleTasks.length
 
   function toggleExpanded(id: number) {
     setExpanded((prev) => {
@@ -127,8 +157,19 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
     })
   }
 
+  async function handleConfirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await onDelete(deleteTarget.id)
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   function renderRow(task: Task, isSubtask: boolean) {
-    const children = sortTasks(visibleTasks.filter((t) => t.parentId === task.id), sortMode)
+    const children = sortTasks(filteredTasks.filter((t) => t.parentId === task.id), sortMode)
     const isExpanded = expanded.has(task.id)
     // Done takes priority over the subtask tint — it's the more useful
     // signal, and only shows up at all once "Show completed" reveals it.
@@ -206,7 +247,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
                 </Button>
               }
             />
-            <Button variant="ghost" size="icon-sm" onClick={() => onDelete(task.id)} title="Delete task">
+            <Button variant="ghost" size="icon-sm" onClick={() => setDeleteTarget(task)} title="Delete task">
               <Trash2 className="text-muted-foreground" />
             </Button>
           </div>
@@ -221,8 +262,8 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         <p className="text-sm text-muted-foreground">
           {loading
             ? 'Loading…'
-            : `${visibleTasks.length} task${visibleTasks.length === 1 ? '' : 's'}` +
-              (!showCompleted && hiddenCount > 0 ? ` (${hiddenCount} completed hidden)` : '')}
+            : `${filteredTasks.length} task${filteredTasks.length === 1 ? '' : 's'}` +
+              (!showDone && hiddenCount > 0 ? ` (${hiddenCount} completed hidden)` : '')}
         </p>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Sort by</span>
@@ -245,6 +286,64 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           />
           <TaskFormDialog tasks={tasks} onSubmit={onCreate} trigger={<Button size="sm">New task</Button>} />
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search title or description…"
+          className="h-8 w-56"
+        />
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+          <SelectTrigger size="sm" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            {(Object.keys(STATUS_LABEL) as TaskStatus[]).map((s) => (
+              <SelectItem key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={priorityFilter} onValueChange={(v) => setPriorityFilter(v as typeof priorityFilter)}>
+          <SelectTrigger size="sm" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All priorities</SelectItem>
+            {(Object.keys(PRIORITY_LABEL) as TaskPriority[]).map((p) => (
+              <SelectItem key={p} value={p}>
+                {PRIORITY_LABEL[p]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {allTags.length > 0 && (
+          <Select value={tagFilter} onValueChange={setTagFilter}>
+            <SelectTrigger size="sm" className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All tags</SelectItem>
+              {allTags.map((tag) => (
+                <SelectItem key={tag} value={tag}>
+                  {tag}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {filtersActive && (
+          <button
+            onClick={clearFilters}
+            className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {error && (
@@ -271,7 +370,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           </TableHeader>
           <TableBody>
             {topLevel.map((task) => {
-              const children = sortTasks(visibleTasks.filter((t) => t.parentId === task.id), sortMode)
+              const children = sortTasks(filteredTasks.filter((t) => t.parentId === task.id), sortMode)
               return (
                 <Fragment key={task.id}>
                   {renderRow(task, false)}
@@ -286,7 +385,18 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
                 </TableCell>
               </TableRow>
             )}
-            {!loading && tasks.length > 0 && topLevel.length === 0 && (
+            {!loading && tasks.length > 0 && topLevel.length === 0 && filtersActive && (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center text-muted-foreground">
+                  No tasks match your search/filters.{' '}
+                  <button onClick={clearFilters} className="text-foreground underline underline-offset-2">
+                    Clear them
+                  </button>
+                  .
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && tasks.length > 0 && topLevel.length === 0 && !filtersActive && (
               <TableRow>
                 <TableCell colSpan={10} className="text-center text-muted-foreground">
                   Every task is completed — "Show completed" above will bring them back.
@@ -302,6 +412,15 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         tasks={tasks}
         open={detailTask !== null}
         onOpenChange={(o) => !o && setDetailTask(null)}
+      />
+
+      <DeleteConfirmDialog
+        task={deleteTarget}
+        childCount={deleteTarget ? tasks.filter((t) => t.parentId === deleteTarget.id).length : 0}
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        deleting={deleting}
       />
     </div>
   )
