@@ -14,7 +14,6 @@ export interface Task {
   startDate: string | null
   dueDate: string | null
   durationHours: number | null
-  progress: number
   dependsOn: number | null
   parentId: number | null
   tags: string[]
@@ -33,7 +32,7 @@ export type TaskPatch = Partial<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>
 
 // A task the chat assistant suggests creating — not yet in the database.
 // Same shape as TaskDraft's core fields (assignable to it directly), minus
-// the fields the assistant doesn't set (status, progress, dependsOn).
+// the fields the assistant doesn't set (status, dependsOn).
 export interface ProposedTask {
   title: string
   description: string

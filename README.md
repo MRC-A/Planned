@@ -7,7 +7,7 @@ Planned is a task and project management app built around one shared set of task
 - **Table** — the exhaustive view: every field, inline status/priority, create/edit/delete, expandable subtasks, sortable by priority, start date, due date, or status.
 - **To-Do** — a simplified list, sortable by priority or due date.
 - **Calendar** — month view, tasks colored by priority.
-- **Gantt** — Day/Week/Month zoom, priority-colored bars with progress.
+- **Gantt** — Day/Week/Month zoom, priority-colored bars.
 - **Subtasks** — one level deep, hidden by default except in Table (expand a task to see them) and To-Do (always visible).
 - **Completed tasks** — hidden by default in every view, with a "Show completed" toggle (remembered per view) to bring them back; once visible, they get a light green highlight so they stand out at a glance.
 - **Local LLM assistant** — chat sidebar that proposes tasks (and subtasks) for you to review before anything is created; scheduling accounts for your existing tasks and deadlines. Runs entirely against a model on your machine — no cloud dependency.

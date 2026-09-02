@@ -44,7 +44,6 @@ interface FormState {
   startDate: string
   dueDate: string
   durationHours: string
-  progress: string
   dependsOn: string
   parentId: string
   tags: string
@@ -58,7 +57,6 @@ const EMPTY_FORM: FormState = {
   startDate: '',
   dueDate: '',
   durationHours: '',
-  progress: '0',
   dependsOn: NO_DEPENDENCY,
   parentId: NO_PARENT,
   tags: '',
@@ -76,7 +74,6 @@ function toFormState(task: Task | undefined): FormState {
     startDate: task.startDate ? task.startDate.slice(0, 10) : '',
     dueDate: task.dueDate ? task.dueDate.slice(0, 10) : '',
     durationHours: task.durationHours !== null ? String(task.durationHours) : '',
-    progress: String(task.progress),
     dependsOn: task.dependsOn !== null ? String(task.dependsOn) : NO_DEPENDENCY,
     parentId: task.parentId !== null ? String(task.parentId) : NO_PARENT,
     tags: task.tags.join(', '),
@@ -118,7 +115,6 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
         startDate: form.startDate || null,
         dueDate: form.dueDate || null,
         durationHours: form.durationHours ? Number(form.durationHours) : null,
-        progress: form.progress ? Number(form.progress) : 0,
         dependsOn: form.dependsOn === NO_DEPENDENCY ? null : Number(form.dependsOn),
         // Belt and suspenders: the field is disabled whenever hasChildren,
         // but force it here too in case form state lagged a stale value.
@@ -220,29 +216,16 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="task-duration">Duration (hours)</Label>
-              <Input
-                id="task-duration"
-                type="number"
-                min="0"
-                step="0.5"
-                value={form.durationHours}
-                onChange={(e) => set('durationHours', e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="task-progress">Progress (%)</Label>
-              <Input
-                id="task-progress"
-                type="number"
-                min="0"
-                max="100"
-                value={form.progress}
-                onChange={(e) => set('progress', e.target.value)}
-              />
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="task-duration">Duration (hours)</Label>
+            <Input
+              id="task-duration"
+              type="number"
+              min="0"
+              step="0.5"
+              value={form.durationHours}
+              onChange={(e) => set('durationHours', e.target.value)}
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">

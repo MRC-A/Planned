@@ -1,5 +1,5 @@
 // The main view: one row per task with every field the other views rely
-// on (status, priority, dates, duration, progress, dependencies, tags).
+// on (status, priority, dates, duration, dependencies, tags).
 // Subtasks are hidden until you expand their parent (click the chevron) —
 // see App.tsx/CLAUDE.md for the rule shared with Calendar and Gantt; To-Do
 // is the one view where subtasks show up unconditionally.
@@ -183,7 +183,6 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         <TableCell className="text-muted-foreground">
           {task.durationHours !== null ? `${task.durationHours}h` : '—'}
         </TableCell>
-        <TableCell className="text-muted-foreground">{task.progress}%</TableCell>
         <TableCell className="text-muted-foreground">{taskTitle(tasks, task.dependsOn) ?? '—'}</TableCell>
         <TableCell>
           <div className="flex flex-wrap gap-1">
@@ -264,7 +263,6 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
               <TableHead>Start date</TableHead>
               <TableHead>Due date</TableHead>
               <TableHead>Duration</TableHead>
-              <TableHead>Progress</TableHead>
               <TableHead>Depends on</TableHead>
               <TableHead>Tags</TableHead>
               <TableHead>Updated</TableHead>
@@ -283,14 +281,14 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
             })}
             {!loading && tasks.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-muted-foreground">
+                <TableCell colSpan={10} className="text-center text-muted-foreground">
                   No tasks yet — create one to get started.
                 </TableCell>
               </TableRow>
             )}
             {!loading && tasks.length > 0 && topLevel.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="text-center text-muted-foreground">
+                <TableCell colSpan={10} className="text-center text-muted-foreground">
                   Every task is completed — "Show completed" above will bring them back.
                 </TableCell>
               </TableRow>

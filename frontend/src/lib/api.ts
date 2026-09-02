@@ -13,7 +13,6 @@ interface ApiTask {
   start_date: string | null
   due_date: string | null
   duration_hours: number | null
-  progress: number
   depends_on: number | null
   parent_id: number | null
   tags: string | null
@@ -31,7 +30,6 @@ function fromApi(raw: ApiTask): Task {
     startDate: raw.start_date,
     dueDate: raw.due_date,
     durationHours: raw.duration_hours,
-    progress: raw.progress,
     dependsOn: raw.depends_on,
     parentId: raw.parent_id,
     tags: raw.tags
@@ -51,7 +49,6 @@ function toApiPayload(draft: TaskPatch): Record<string, unknown> {
   if (draft.startDate !== undefined) payload.start_date = draft.startDate
   if (draft.dueDate !== undefined) payload.due_date = draft.dueDate
   if (draft.durationHours !== undefined) payload.duration_hours = draft.durationHours
-  if (draft.progress !== undefined) payload.progress = draft.progress
   if (draft.dependsOn !== undefined) payload.depends_on = draft.dependsOn
   if (draft.parentId !== undefined) payload.parent_id = draft.parentId
   if (draft.tags !== undefined) payload.tags = draft.tags.join(', ')

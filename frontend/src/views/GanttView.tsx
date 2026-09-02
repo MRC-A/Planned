@@ -335,10 +335,8 @@ function GanttBarRow({ row, rowIndex, groups, onSelect }: GanttBarRowProps) {
         onClick={onSelect}
         className={`m-1 cursor-pointer overflow-hidden rounded ${isDone ? 'bg-done' : PRIORITY_BAR_CLASS[task.priority]}`}
         style={{ gridRow: rowIndex, gridColumn: `${startOffset + 2} / span ${durationDays}` }}
-        title={`${task.title} — ${task.progress}%`}
-      >
-        <div className="h-full bg-foreground/15" style={{ width: `${task.progress}%` }} />
-      </div>
+        title={task.title}
+      />
     </>
   )
 }

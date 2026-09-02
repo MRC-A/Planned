@@ -93,19 +93,6 @@ function TaskSummary({ task, tasks }: { task: Task; tasks: Task[] }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">Progress</span>
-          <div className="flex items-center gap-2">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-              <div
-                className={task.status === 'done' ? 'h-full bg-done-foreground' : 'h-full bg-primary'}
-                style={{ width: `${Math.min(100, Math.max(0, task.progress))}%` }}
-              />
-            </div>
-            <span className="text-xs text-muted-foreground">{task.progress}%</span>
-          </div>
-        </div>
-
         {task.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {task.tags.map((tag) => (
