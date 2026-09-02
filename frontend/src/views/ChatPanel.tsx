@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { shutdownApp } from '@/lib/api'
 import { useChat } from '@/hooks/use-chat'
-import { PRIORITY_BADGE_VARIANT, PRIORITY_LABEL, formatDate } from '@/lib/task-display'
-import type { ProposedTask, Task, TaskDraft } from '@/types/task'
+import { PRIORITY_BADGE_VARIANT, PRIORITY_LABEL, STATUS_LABEL, formatDate } from '@/lib/task-display'
+import type { ProposedTask, ProposedTaskUpdate, Task, TaskDraft, TaskPatch } from '@/types/task'
 
 interface ChatPanelProps {
+  tasks: Task[]
   onCreateTask: (draft: TaskDraft) => Promise<Task>
+  onUpdateTask: (id: number, patch: TaskPatch) => Promise<void>
 }
 
 function toDraft(t: ProposedTask, parentId: number | null): TaskDraft {
@@ -25,7 +27,41 @@ function toDraft(t: ProposedTask, parentId: number | null): TaskDraft {
   }
 }
 
-export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
+// One "field: before → after" line per changed field, for the F5 proposed-
+// update preview — only the fields actually present on `u` (see
+// ProposedTaskUpdate's doc comment: absent means unchanged, not "same
+// value"), read against `current`'s live value so the user sees a real
+// diff rather than just the new value in isolation.
+function diffLines(current: Task, u: ProposedTaskUpdate): { label: string; from: string; to: string }[] {
+  const lines: { label: string; from: string; to: string }[] = []
+  if (u.title !== undefined) lines.push({ label: 'Title', from: current.title, to: u.title })
+  if (u.description !== undefined) {
+    lines.push({ label: 'Description', from: current.description || '—', to: u.description || '—' })
+  }
+  if (u.status !== undefined) lines.push({ label: 'Status', from: STATUS_LABEL[current.status], to: STATUS_LABEL[u.status] })
+  if (u.priority !== undefined) {
+    lines.push({ label: 'Priority', from: PRIORITY_LABEL[current.priority], to: PRIORITY_LABEL[u.priority] })
+  }
+  if (u.startDate !== undefined) {
+    lines.push({ label: 'Start date', from: formatDate(current.startDate), to: formatDate(u.startDate) })
+  }
+  if (u.dueDate !== undefined) {
+    lines.push({ label: 'Due date', from: formatDate(current.dueDate), to: formatDate(u.dueDate) })
+  }
+  if (u.durationHours !== undefined) {
+    lines.push({
+      label: 'Duration',
+      from: current.durationHours !== null ? `${current.durationHours}h` : '—',
+      to: u.durationHours !== null ? `${u.durationHours}h` : '—',
+    })
+  }
+  if (u.tags !== undefined) {
+    lines.push({ label: 'Tags', from: current.tags.join(', ') || '—', to: u.tags.join(', ') || '—' })
+  }
+  return lines
+}
+
+export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPanelProps) {
   const { messages, sending, error, send } = useChat()
   const [draft, setDraft] = useState('')
   const [shuttingDown, setShuttingDown] = useState(false)
@@ -87,6 +123,26 @@ export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
       setResolvedProposals((prev) => new Set(prev).add(index))
     } catch (err) {
       setProposalError(err instanceof Error ? err.message : 'Failed to create tasks')
+    } finally {
+      setApplyingIndex(null)
+    }
+  }
+
+  async function handleApplyUpdates(index: number, updates: ProposedTaskUpdate[]) {
+    setApplyingIndex(index)
+    setProposalError(null)
+    try {
+      for (const u of updates) {
+        // The target task may have been deleted (or otherwise changed)
+        // between the reply being generated and the user clicking Apply —
+        // skip it rather than PATCHing an id that's no longer there.
+        if (!tasks.some((t) => t.id === u.taskId)) continue
+        const { taskId, ...patch } = u
+        await onUpdateTask(taskId, patch)
+      }
+      setResolvedProposals((prev) => new Set(prev).add(index))
+    } catch (err) {
+      setProposalError(err instanceof Error ? err.message : 'Failed to apply updates')
     } finally {
       setApplyingIndex(null)
     }
@@ -167,6 +223,58 @@ export default function ChatPanel({ onCreateTask }: ChatPanelProps) {
                         {applyingIndex === i
                           ? 'Creating…'
                           : `Create ${m.proposedTasks.length} task${m.proposedTasks.length === 1 ? '' : 's'}`}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={applyingIndex === i}
+                        onClick={() => handleDiscardProposed(i)}
+                      >
+                        Discard
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {m.proposedUpdates && m.proposedUpdates.length > 0 && (
+                <div className="rounded-lg border border-border bg-background p-3">
+                  <ul className="flex flex-col gap-2">
+                    {m.proposedUpdates.map((u, ui) => {
+                      const current = tasks.find((t) => t.id === u.taskId)
+                      if (!current) {
+                        return (
+                          <li key={ui} className="text-[11px] text-muted-foreground italic">
+                            Task #{u.taskId} no longer exists — skipped.
+                          </li>
+                        )
+                      }
+                      return (
+                        <li key={ui} className="flex flex-col gap-0.5">
+                          <span className="text-xs font-medium text-foreground">{current.title}</span>
+                          {diffLines(current, u).map((l) => (
+                            <span key={l.label} className="text-[11px] text-muted-foreground">
+                              {l.label}: {l.from} → {l.to}
+                            </span>
+                          ))}
+                        </li>
+                      )
+                    })}
+                  </ul>
+
+                  {resolvedProposals.has(i) ? (
+                    <p className="mt-2 text-xs text-muted-foreground">Done.</p>
+                  ) : (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={applyingIndex === i}
+                        onClick={() => handleApplyUpdates(i, m.proposedUpdates!)}
+                      >
+                        {applyingIndex === i
+                          ? 'Applying…'
+                          : `Apply ${m.proposedUpdates.length} update${m.proposedUpdates.length === 1 ? '' : 's'}`}
                       </Button>
                       <Button
                         size="sm"

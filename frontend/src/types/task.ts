@@ -46,3 +46,22 @@ export interface ProposedTask {
   // same reply. Null for a standalone/top-level proposal.
   parentRef: number | null
 }
+
+// A change the chat assistant suggests to an EXISTING task (F5) —
+// rescheduling, a status/priority change, or any other field edit. Every
+// field but `taskId` is optional and, deliberately, `TaskPatch`-shaped
+// rather than always present: the backend (api/chat.py::_build_proposed_updates)
+// only includes the keys the model actually changed, so an omitted field
+// here means "leave it alone" — an explicit `null` (e.g. `dueDate: null`)
+// is a real, intentional clear, not the same as absent.
+export interface ProposedTaskUpdate {
+  taskId: number
+  title?: string
+  description?: string
+  status?: TaskStatus
+  priority?: TaskPriority
+  startDate?: string | null
+  dueDate?: string | null
+  durationHours?: number | null
+  tags?: string[]
+}
