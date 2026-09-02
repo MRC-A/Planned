@@ -18,16 +18,30 @@ interface CalendarViewProps {
 }
 
 function addDays(iso: string, days: number): string {
-  const d = new Date(iso)
+  // Parse as local midnight (a bare "T00:00:00" with no timezone marker is
+  // what makes JS parse it as local time instead of UTC — same trick as
+  // GanttView's parseDate) and format back with local getters, never
+  // toISOString(). toISOString() always converts to UTC, which is exactly
+  // what caused C4: for a UTC+2 user, local midnight Oct 1 became 22:00 UTC
+  // on Sep 30, so a due date's "+1 day, exclusive end" adjustment silently
+  // lost a day and that day never rendered on the calendar.
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`)
   d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function toEvents(tasks: Task[]) {
   return tasks
     .filter((t) => t.startDate || t.dueDate)
     .map((t) => {
-      const start = t.startDate ?? t.dueDate!
+      // Bare YYYY-MM-DD, not the full datetime string — feeding FullCalendar
+      // an unambiguous all-day date rather than letting it parse a
+      // time-bearing string itself (its own source of the same class of
+      // timezone bug this fix is for).
+      const start = (t.startDate ?? t.dueDate!).slice(0, 10)
       // FullCalendar's all-day `end` is exclusive, so a due date needs +1 day
       // to actually cover that day on the grid.
       const end = t.dueDate ? addDays(t.dueDate, 1) : addDays(start, 1)
