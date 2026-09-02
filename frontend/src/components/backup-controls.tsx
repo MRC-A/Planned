@@ -51,16 +51,32 @@ export default function BackupControls({ tasks, onImported }: BackupControlsProp
     setStatus(null)
     try {
       // Pass 1: create every task flat, collecting old id (from the file)
-      // -> new id (from the database) so pass 2 has something to relink.
+      // -> new id (from the database). A single row's failure (a backend
+      // hiccup, a bad value) is recorded and skipped rather than aborting
+      // the whole import — an earlier version threw on the first error and
+      // left everything created up to that point as permanent, unlinked
+      // flat duplicates with no indication anything had gone wrong (a real
+      // incident: an import racing a backend restart silently left ~35
+      // half-imported rows behind).
       const idMap = new Map<number, number>()
+      const failedCreates: string[] = []
       for (const row of rows) {
-        const created = await createTask(toImportDraft(row))
-        if (row.id !== undefined) idMap.set(row.id, created.id)
+        try {
+          const created = await createTask(toImportDraft(row))
+          if (row.id !== undefined) idMap.set(row.id, created.id)
+        } catch {
+          failedCreates.push(row.title)
+        }
       }
-      // Pass 2: relink parentId/dependsOn. A reference to an id that
-      // wasn't in this file is dropped rather than failing the whole
-      // import — same "degrade, don't reject the batch" philosophy as
-      // the chat assistant's own subtask handling (_sanitize_parent_refs).
+
+      // Pass 2: relink parentId/dependsOn for whatever pass 1 actually
+      // created. A reference to an id that wasn't in this file (or that
+      // failed to create) is dropped rather than failing the import —
+      // same "degrade, don't reject the batch" philosophy as the chat
+      // assistant's own subtask handling (_sanitize_parent_refs). A
+      // relink call itself failing is recorded the same way as a create
+      // failure, not fatal to the rest of the batch.
+      const failedRelinks: string[] = []
       for (const row of rows) {
         const newId = row.id !== undefined ? idMap.get(row.id) : undefined
         if (newId === undefined) continue
@@ -73,18 +89,29 @@ export default function BackupControls({ tasks, onImported }: BackupControlsProp
           const newDependsOn = idMap.get(row.dependsOn)
           if (newDependsOn !== undefined) patch.dependsOn = newDependsOn
         }
-        if (Object.keys(patch).length > 0) await updateTask(newId, patch)
+        if (Object.keys(patch).length === 0) continue
+        try {
+          await updateTask(newId, patch)
+        } catch {
+          failedRelinks.push(row.title)
+        }
       }
+
       await onImported()
-      setStatus({ type: 'success', message: `Imported ${rows.length} task${rows.length === 1 ? '' : 's'}.` })
-    } catch (err) {
-      // Some tasks may already have been created before the failure —
-      // refresh so the list reflects reality rather than looking stale.
-      await onImported()
-      setStatus({
-        type: 'error',
-        message: err instanceof Error ? `Import failed partway through: ${err.message}` : 'Import failed partway through.',
-      })
+
+      const createdCount = idMap.size
+      if (failedCreates.length === 0 && failedRelinks.length === 0) {
+        setStatus({ type: 'success', message: `Imported ${createdCount} task${createdCount === 1 ? '' : 's'}.` })
+      } else {
+        const parts = [`Imported ${createdCount}/${rows.length} task${rows.length === 1 ? '' : 's'}.`]
+        if (failedCreates.length > 0) {
+          parts.push(`Couldn't create: ${failedCreates.join(', ')}.`)
+        }
+        if (failedRelinks.length > 0) {
+          parts.push(`Created but couldn't link to their parent/dependency: ${failedRelinks.join(', ')}.`)
+        }
+        setStatus({ type: 'error', message: parts.join(' ') })
+      }
     } finally {
       setImporting(false)
     }

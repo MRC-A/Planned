@@ -7,6 +7,7 @@ import { Fragment, useState } from 'react'
 import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -96,7 +97,7 @@ interface TableViewProps {
   onCreate: (draft: TaskDraft) => Promise<unknown>
   onEdit: (id: number, patch: TaskPatch) => Promise<void>
   onCycleStatus: (task: Task) => void
-  onDelete: (id: number) => Promise<void>
+  onBulkDelete: (ids: number[]) => Promise<void>
 }
 
 function taskTitle(tasks: Task[], id: number | null): string | null {
@@ -104,12 +105,13 @@ function taskTitle(tasks: Task[], id: number | null): string | null {
   return tasks.find((t) => t.id === id)?.title ?? `#${id}`
 }
 
-export default function TableView({ tasks, loading, error, onCreate, onEdit, onCycleStatus, onDelete }: TableViewProps) {
+export default function TableView({ tasks, loading, error, onCreate, onEdit, onCycleStatus, onBulkDelete }: TableViewProps) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [sortMode, setSortMode] = useState<SortMode>('none')
   const [detailTask, setDetailTask] = useState<Task | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null)
+  const [deleteTargets, setDeleteTargets] = useState<Task[]>([])
   const [deleting, setDeleting] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all')
   const [priorityFilter, setPriorityFilter] = useState<'all' | TaskPriority>('all')
@@ -148,6 +150,34 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
     sortMode,
   )
 
+  // Every row actually rendered right now — a top-level row plus, for each
+  // expanded parent, its (also filtered/sorted) children — so "select all"
+  // means "select everything currently on screen", not every task that
+  // exists. Recomputed each render rather than memoized, same as the rest
+  // of this view's filtering/sorting.
+  const visibleIds: number[] = []
+  for (const t of topLevel) {
+    visibleIds.push(t.id)
+    if (expanded.has(t.id)) {
+      for (const child of sortTasks(filteredTasks.filter((c) => c.parentId === t.id), sortMode)) {
+        visibleIds.push(child.id)
+      }
+    }
+  }
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+  const someVisibleSelected = visibleIds.some((id) => selected.has(id))
+  const selectedTasks = tasks.filter((t) => selected.has(t.id))
+
+  // How many children of the tasks pending deletion fall *outside* that
+  // same set — those are the ones that will be promoted to top-level
+  // rather than deleted (see api/tasks.py::_detach_references); a child
+  // that's also in deleteTargets needs no such warning, it's being
+  // deleted too.
+  const deleteTargetIds = new Set(deleteTargets.map((t) => t.id))
+  const deleteChildCount = tasks.filter(
+    (t) => t.parentId !== null && deleteTargetIds.has(t.parentId) && !deleteTargetIds.has(t.id),
+  ).length
+
   function toggleExpanded(id: number) {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -157,12 +187,38 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
     })
   }
 
+  function toggleSelected(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
   async function handleConfirmDelete() {
-    if (!deleteTarget) return
+    if (deleteTargets.length === 0) return
     setDeleting(true)
     try {
-      await onDelete(deleteTarget.id)
-      setDeleteTarget(null)
+      await onBulkDelete(deleteTargets.map((t) => t.id))
+      setSelected((prev) => {
+        const next = new Set(prev)
+        deleteTargets.forEach((t) => next.delete(t.id))
+        return next
+      })
+      setDeleteTargets([])
     } finally {
       setDeleting(false)
     }
@@ -186,6 +242,9 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         className={`cursor-pointer ${rowClassName}`.trim() || undefined}
         onClick={() => setDetailTask(task)}
       >
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          <Checkbox checked={selected.has(task.id)} onCheckedChange={() => toggleSelected(task.id)} />
+        </TableCell>
         <TableCell className="font-medium text-foreground">
           <div className="flex items-center gap-1" style={isSubtask ? { paddingLeft: '2rem' } : undefined}>
             {!isSubtask && children.length > 0 ? (
@@ -247,7 +306,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
                 </Button>
               }
             />
-            <Button variant="ghost" size="icon-sm" onClick={() => setDeleteTarget(task)} title="Delete task">
+            <Button variant="ghost" size="icon-sm" onClick={() => setDeleteTargets([task])} title="Delete task">
               <Trash2 className="text-muted-foreground" />
             </Button>
           </div>
@@ -287,6 +346,23 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           <TaskFormDialog tasks={tasks} onSubmit={onCreate} trigger={<Button size="sm">New task</Button>} />
         </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5">
+          <span className="text-sm text-foreground">
+            {selected.size} selected
+          </span>
+          <Button variant="destructive" size="sm" onClick={() => setDeleteTargets(selectedTasks)}>
+            Delete selected
+          </Button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
         <Input
@@ -356,6 +432,13 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>
+                <Checkbox
+                  checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                  onCheckedChange={toggleSelectAllVisible}
+                  aria-label="Select all visible tasks"
+                />
+              </TableHead>
               <TableHead>Title</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Priority</TableHead>
@@ -380,14 +463,14 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
             })}
             {!loading && tasks.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   No tasks yet — create one to get started.
                 </TableCell>
               </TableRow>
             )}
             {!loading && tasks.length > 0 && topLevel.length === 0 && filtersActive && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   No tasks match your search/filters.{' '}
                   <button onClick={clearFilters} className="text-foreground underline underline-offset-2">
                     Clear them
@@ -398,7 +481,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
             )}
             {!loading && tasks.length > 0 && topLevel.length === 0 && !filtersActive && (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground">
+                <TableCell colSpan={11} className="text-center text-muted-foreground">
                   Every task is completed — "Show completed" above will bring them back.
                 </TableCell>
               </TableRow>
@@ -415,10 +498,10 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
       />
 
       <DeleteConfirmDialog
-        task={deleteTarget}
-        childCount={deleteTarget ? tasks.filter((t) => t.parentId === deleteTarget.id).length : 0}
-        open={deleteTarget !== null}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        tasks={deleteTargets}
+        childCount={deleteChildCount}
+        open={deleteTargets.length > 0}
+        onOpenChange={(o) => !o && setDeleteTargets([])}
         onConfirm={handleConfirmDelete}
         deleting={deleting}
       />

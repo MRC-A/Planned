@@ -19,7 +19,7 @@ const VIEWS: { id: ViewName; label: string }[] = [
 
 export default function App() {
   const [view, setView] = useState<ViewName>('table')
-  const { tasks, loading, error, add, edit, remove, refresh } = useTasks()
+  const { tasks, loading, error, add, edit, bulkRemove, refresh } = useTasks()
 
   function cycleStatus(task: Task) {
     edit(task.id, { status: NEXT_STATUS[task.status] })
@@ -59,7 +59,7 @@ export default function App() {
               onCreate={add}
               onEdit={edit}
               onCycleStatus={cycleStatus}
-              onDelete={remove}
+              onBulkDelete={bulkRemove}
             />
           )}
           {view === 'todo' && <TodoView tasks={tasks} loading={loading} onToggleDone={toggleDone} />}

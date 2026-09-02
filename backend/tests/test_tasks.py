@@ -77,3 +77,64 @@ def test_a_childless_top_level_task_can_still_be_given_a_parent(client):
 
     assert response.status_code == 200
     assert response.json()["parent_id"] == parent["id"]
+
+
+def test_bulk_delete_removes_every_requested_task(client):
+    a = create(client, title="A")
+    b = create(client, title="B")
+    c = create(client, title="C")
+
+    response = client.post("/api/tasks/bulk-delete", json={"ids": [a["id"], b["id"]]})
+
+    assert response.status_code == 200
+    assert sorted(response.json()["deleted"]) == sorted([a["id"], b["id"]])
+    remaining_ids = {t["id"] for t in client.get("/api/tasks/").json()}
+    assert remaining_ids == {c["id"]}
+
+
+def test_bulk_delete_promotes_a_child_not_included_in_the_batch(client):
+    parent = create(client, title="Parent")
+    child = create(client, title="Child", parent_id=parent["id"])
+
+    response = client.post("/api/tasks/bulk-delete", json={"ids": [parent["id"]]})
+
+    assert response.status_code == 200
+    child_after = next(t for t in client.get("/api/tasks/").json() if t["id"] == child["id"])
+    assert child_after["parent_id"] is None
+
+
+def test_bulk_delete_of_parent_and_child_together_does_not_error(client):
+    """The child doesn't need promoting if it's being deleted in the same
+    batch — make sure that shared codepath doesn't choke on it."""
+    parent = create(client, title="Parent")
+    child = create(client, title="Child", parent_id=parent["id"])
+
+    response = client.post("/api/tasks/bulk-delete", json={"ids": [parent["id"], child["id"]]})
+
+    assert response.status_code == 200
+    assert sorted(response.json()["deleted"]) == sorted([parent["id"], child["id"]])
+    assert client.get("/api/tasks/").json() == []
+
+
+def test_bulk_delete_clears_depends_on_of_a_dependent_not_included_in_the_batch(client):
+    upstream = create(client, title="Upstream")
+    downstream = create(client, title="Downstream", depends_on=upstream["id"])
+
+    response = client.post("/api/tasks/bulk-delete", json={"ids": [upstream["id"]]})
+
+    assert response.status_code == 200
+    downstream_after = next(t for t in client.get("/api/tasks/").json() if t["id"] == downstream["id"])
+    assert downstream_after["depends_on"] is None
+
+
+def test_bulk_delete_ignores_ids_that_do_not_exist(client):
+    """A stale id (e.g. the task was already deleted elsewhere) shouldn't
+    fail the whole batch — same 'degrade, don't reject the batch' spirit
+    as the chat assistant's own subtask handling."""
+    real = create(client, title="Real task")
+
+    response = client.post("/api/tasks/bulk-delete", json={"ids": [real["id"], 999999]})
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] == [real["id"]]
+    assert client.get("/api/tasks/").json() == []

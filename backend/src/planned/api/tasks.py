@@ -3,12 +3,21 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from planned.db import engine
 from planned.models import Task, TaskCreate, TaskUpdate
 
 router = APIRouter()
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted: list[int]
 
 
 def _validate_parent(session: Session, parent_id: Optional[int], task_id: Optional[int] = None) -> None:
@@ -79,6 +88,45 @@ def update_task(task_id: int, payload: TaskUpdate) -> Task:
         return task
 
 
+def _detach_references(session: Session, ids: set[int], keep_ids: set[int]) -> None:
+    """A deleted task can't leave dangling references behind — orphaned rows
+    pointing at a parent_id/depends_on that no longer exists were invisible
+    everywhere except To-Do (a bug found in production). Children are
+    promoted to top-level rather than cascade-deleted: losing the parent
+    shouldn't silently lose the subtasks' own data. Shared by single and
+    bulk delete; `keep_ids` (the ids also being deleted in the same call)
+    are skipped since they need no detaching — they're going away too."""
+    children = session.exec(select(Task).where(Task.parent_id.in_(ids))).all()
+    dependents = session.exec(select(Task).where(Task.depends_on.in_(ids))).all()
+    now = datetime.utcnow()
+    for child in children:
+        if child.id in keep_ids:
+            continue
+        child.parent_id = None
+        child.updated_at = now
+        session.add(child)
+    for dependent in dependents:
+        if dependent.id in keep_ids:
+            continue
+        dependent.depends_on = None
+        dependent.updated_at = now
+        session.add(dependent)
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete_tasks(payload: BulkDeleteRequest) -> BulkDeleteResponse:
+    with Session(engine) as session:
+        ids = set(payload.ids)
+        tasks = session.exec(select(Task).where(Task.id.in_(ids))).all()
+        found_ids = {t.id for t in tasks}
+
+        _detach_references(session, found_ids, keep_ids=found_ids)
+        for task in tasks:
+            session.delete(task)
+        session.commit()
+        return BulkDeleteResponse(deleted=sorted(found_ids))
+
+
 @router.delete("/{task_id}", status_code=204)
 def delete_task(task_id: int) -> None:
     with Session(engine) as session:
@@ -86,22 +134,6 @@ def delete_task(task_id: int) -> None:
         if task is None:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        # A deleted task can't leave dangling references behind — orphaned
-        # rows pointing at a parent_id/depends_on that no longer exists were
-        # invisible everywhere except To-Do (a bug found in production).
-        # Children are promoted to top-level rather than cascade-deleted:
-        # losing the parent shouldn't silently lose the subtasks' own data.
-        children = session.exec(select(Task).where(Task.parent_id == task_id)).all()
-        dependents = session.exec(select(Task).where(Task.depends_on == task_id)).all()
-        now = datetime.utcnow()
-        for child in children:
-            child.parent_id = None
-            child.updated_at = now
-            session.add(child)
-        for dependent in dependents:
-            dependent.depends_on = None
-            dependent.updated_at = now
-            session.add(dependent)
-
+        _detach_references(session, {task_id}, keep_ids=set())
         session.delete(task)
         session.commit()

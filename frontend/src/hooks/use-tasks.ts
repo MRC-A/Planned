@@ -2,7 +2,7 @@
 // success. Deliberately simple (refetch over optimistic updates) since the
 // task list is small and local.
 import { useCallback, useEffect, useState } from 'react'
-import { createTask, deleteTask, listTasks, updateTask } from '@/lib/api'
+import { bulkDeleteTasks, createTask, deleteTask, listTasks, updateTask } from '@/lib/api'
 import type { Task, TaskDraft } from '@/types/task'
 
 export function useTasks() {
@@ -51,5 +51,13 @@ export function useTasks() {
     [refresh],
   )
 
-  return { tasks, loading, error, refresh, add, edit, remove }
+  const bulkRemove = useCallback(
+    async (ids: number[]) => {
+      await bulkDeleteTasks(ids)
+      await refresh()
+    },
+    [refresh],
+  )
+
+  return { tasks, loading, error, refresh, add, edit, remove, bulkRemove }
 }

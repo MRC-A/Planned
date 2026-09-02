@@ -92,6 +92,14 @@ export async function deleteTask(id: number): Promise<void> {
   await request<void>(`/${id}`, { method: 'DELETE' })
 }
 
+export async function bulkDeleteTasks(ids: number[]): Promise<number[]> {
+  const result = await request<{ deleted: number[] }>('/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
+  return result.deleted
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
