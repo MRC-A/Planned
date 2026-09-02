@@ -88,10 +88,10 @@ export async function updateTask(id: number, patch: TaskPatch): Promise<Task> {
   return fromApi(raw)
 }
 
-export async function deleteTask(id: number): Promise<void> {
-  await request<void>(`/${id}`, { method: 'DELETE' })
-}
-
+// No single-task delete wrapper: the frontend routes every delete — including
+// the Table's per-row trash icon — through bulk-delete with a one-element
+// array, so there's exactly one delete codepath. `DELETE /api/tasks/{id}`
+// still exists server-side (and is tested) for direct API use.
 export async function bulkDeleteTasks(ids: number[]): Promise<number[]> {
   const result = await request<{ deleted: number[] }>('/bulk-delete', {
     method: 'POST',

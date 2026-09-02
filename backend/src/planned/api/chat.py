@@ -24,7 +24,7 @@ from sqlmodel import Session, select
 
 from planned.db import engine
 from planned.llm.client import LocalLLMClient
-from planned.models import Task, TaskStatus
+from planned.models import Task, TaskPriority, TaskStatus
 
 router = APIRouter()
 _llm = LocalLLMClient()
@@ -235,6 +235,17 @@ _UPDATE_FIELD_MAP = {
 }
 
 
+# Enum-valued fields, checked here rather than left to blow up later: an
+# out-of-enum value (the model writing "finished" instead of "done") would
+# otherwise sail through to the frontend and come back as a raw 422 from
+# PATCH /api/tasks/{id} — an error about a request the user didn't know they
+# were making. Dropping just that field keeps the rest of the update usable.
+_UPDATE_ENUMS = {
+    "status": {s.value for s in TaskStatus},
+    "priority": {p.value for p in TaskPriority},
+}
+
+
 def _build_proposed_updates(raw_updates: list, open_task_ids: set[int]) -> list[dict]:
     """Turn the model's raw tool-call arguments into what the frontend
     expects. An update targeting a task_id that isn't a real, currently-open
@@ -250,7 +261,14 @@ def _build_proposed_updates(raw_updates: list, open_task_ids: set[int]) -> list[
         task_id = raw.get("task_id")
         if not isinstance(task_id, int) or task_id not in open_task_ids:
             continue
-        patch = {camel: raw[snake] for snake, camel in _UPDATE_FIELD_MAP.items() if snake in raw}
+        patch = {}
+        for snake, camel in _UPDATE_FIELD_MAP.items():
+            if snake not in raw:
+                continue
+            value = raw[snake]
+            if snake in _UPDATE_ENUMS and value not in _UPDATE_ENUMS[snake]:
+                continue
+            patch[camel] = value
         if not patch:
             continue
         proposed.append({"taskId": task_id, **patch})

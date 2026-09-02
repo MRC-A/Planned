@@ -4,13 +4,13 @@ Planned is a task and project management app built around one shared set of task
 
 ## Features
 
-- **Table** — the exhaustive view: every field, inline status/priority, create/edit/delete (delete asks for confirmation first), expandable subtasks, sortable by priority, start date, due date, or status, with a search box and status/priority/tag filters to cut down a long list.
+- **Table** — the exhaustive view: every field, inline status/priority, create/edit/delete (delete asks for confirmation first), tick several rows to delete them in one go, expandable subtasks, sortable by priority, start date, due date, or status, with a search box and status/priority/tag filters to cut down a long list.
 - **To-Do** — a simplified list, sortable by priority or due date.
 - **Calendar** — month view, tasks colored by priority.
 - **Gantt** — Day/Week/Month zoom, priority-colored bars.
 - **Subtasks** — one level deep, hidden by default except in Table (expand a task to see them) and To-Do (always visible).
 - **Completed tasks** — hidden by default in every view, with a "Show completed" toggle (remembered per view) to bring them back; once visible, they get a light green highlight so they stand out at a glance.
-- **Local LLM assistant** — chat sidebar that proposes tasks (and subtasks) for you to review before anything is created; scheduling accounts for your existing tasks and deadlines. Runs entirely against a model on your machine — no cloud dependency.
+- **Local LLM assistant** — chat sidebar that proposes tasks (and subtasks) for you to review before anything is created, and can also reschedule, complete or edit tasks you already have ("push the report back a week") — shown as a before/after diff you confirm before it applies. Scheduling accounts for your existing tasks and deadlines. Runs entirely against a model on your machine — no cloud dependency.
 - **Backup** — Export/Import buttons (top nav) to move your tasks in and out as a JSON file; the backend also copies the database on every startup, keeping the last 10 automatic backups, so a bad edit or a bug isn't the end of your data.
 
 ## Getting started

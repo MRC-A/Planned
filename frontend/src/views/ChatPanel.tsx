@@ -101,7 +101,10 @@ export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPan
     }
   }
 
-  async function handleCreateProposed(index: number, tasks: ProposedTask[]) {
+  // `proposals`, not `tasks` — `tasks` is the prop holding the real task
+  // list, and shadowing it here with a list of unsaved proposals would be
+  // asking for a mix-up.
+  async function handleCreateProposed(index: number, proposals: ProposedTask[]) {
     setApplyingIndex(index)
     setProposalError(null)
     try {
@@ -109,16 +112,16 @@ export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPan
       // are known before creating any subtask that references them —
       // parentRef is just an index into this proposal batch, not a real id.
       const realIdByRef = new Map<number, number>()
-      for (let i = 0; i < tasks.length; i++) {
-        if (tasks[i].parentRef !== null) continue
-        const created = await onCreateTask(toDraft(tasks[i], null))
+      for (let i = 0; i < proposals.length; i++) {
+        if (proposals[i].parentRef !== null) continue
+        const created = await onCreateTask(toDraft(proposals[i], null))
         realIdByRef.set(i, created.id)
       }
-      for (let i = 0; i < tasks.length; i++) {
-        const ref = tasks[i].parentRef
+      for (let i = 0; i < proposals.length; i++) {
+        const ref = proposals[i].parentRef
         if (ref === null) continue
         const parentId = realIdByRef.get(ref) ?? null
-        await onCreateTask(toDraft(tasks[i], parentId))
+        await onCreateTask(toDraft(proposals[i], parentId))
       }
       setResolvedProposals((prev) => new Set(prev).add(index))
     } catch (err) {
@@ -132,6 +135,7 @@ export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPan
     setApplyingIndex(index)
     setProposalError(null)
     try {
+      let applied = 0
       for (const u of updates) {
         // The target task may have been deleted (or otherwise changed)
         // between the reply being generated and the user clicking Apply —
@@ -139,6 +143,12 @@ export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPan
         if (!tasks.some((t) => t.id === u.taskId)) continue
         const { taskId, ...patch } = u
         await onUpdateTask(taskId, patch)
+        applied++
+      }
+      // Every target gone means nothing happened — saying "Done." there
+      // would claim an update that never ran.
+      if (applied === 0) {
+        setProposalError('None of those tasks still exist — nothing was updated.')
       }
       setResolvedProposals((prev) => new Set(prev).add(index))
     } catch (err) {

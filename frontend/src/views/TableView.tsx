@@ -145,10 +145,37 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
     if (q && !t.title.toLowerCase().includes(q) && !t.description.toLowerCase().includes(q)) return false
     return true
   })
-  const topLevel = sortTasks(
-    filteredTasks.filter((t) => t.parentId === null),
-    sortMode,
+
+  // A subtask can match the filters while its parent doesn't. Only
+  // top-level rows are ever mapped (children render underneath one), so
+  // without the carrier/orphan handling below such a match is completely
+  // unreachable — the view showed "1 task" in the counter and "No tasks
+  // match your search/filters" in the table at the same time, for a real
+  // matching subtask. With filters off, the row list is exactly what it
+  // always was.
+  const matchingIds = new Set(filteredTasks.map((t) => t.id))
+  const carrierParentIds = new Set(
+    filteredTasks.filter((t) => t.parentId !== null).map((t) => t.parentId as number),
   )
+  const rootTasks = filtersActive
+    ? visibleTasks.filter(
+        (t) =>
+          // a top-level match, or a parent kept only to carry a matching child
+          (t.parentId === null && (matchingIds.has(t.id) || carrierParentIds.has(t.id))) ||
+          // a matching subtask whose parent isn't on screen to carry it
+          // (a done/hidden parent) — shown standalone rather than dropped
+          (t.parentId !== null && matchingIds.has(t.id) && !visibleTasks.some((p) => p.id === t.parentId)),
+      )
+    : filteredTasks.filter((t) => t.parentId === null)
+  const topLevel = sortTasks(rootTasks, sortMode)
+
+  // While a filter is on, a parent's matching children are revealed without
+  // needing a click — otherwise the match sits behind a chevron the user has
+  // no reason to suspect. Trade-off: collapsing is inert until the filter is
+  // cleared (the manual `expanded` state still records the click).
+  function isRowExpanded(task: Task, childCount: number): boolean {
+    return expanded.has(task.id) || (filtersActive && childCount > 0)
+  }
 
   // Every row actually rendered right now — a top-level row plus, for each
   // expanded parent, its (also filtered/sorted) children — so "select all"
@@ -158,10 +185,9 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
   const visibleIds: number[] = []
   for (const t of topLevel) {
     visibleIds.push(t.id)
-    if (expanded.has(t.id)) {
-      for (const child of sortTasks(filteredTasks.filter((c) => c.parentId === t.id), sortMode)) {
-        visibleIds.push(child.id)
-      }
+    const children = sortTasks(filteredTasks.filter((c) => c.parentId === t.id), sortMode)
+    if (isRowExpanded(t, children.length)) {
+      for (const child of children) visibleIds.push(child.id)
     }
   }
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
@@ -226,7 +252,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
 
   function renderRow(task: Task, isSubtask: boolean) {
     const children = sortTasks(filteredTasks.filter((t) => t.parentId === task.id), sortMode)
-    const isExpanded = expanded.has(task.id)
+    const isExpanded = isRowExpanded(task, children.length)
     // Done takes priority over the subtask tint — it's the more useful
     // signal, and only shows up at all once "Show completed" reveals it.
     const rowClassName = [
@@ -347,10 +373,13 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         </div>
       </div>
 
-      {selected.size > 0 && (
+      {/* Counted off `selectedTasks` (ids resolved against the live list),
+          not `selected.size` — a task deleted from elsewhere would otherwise
+          keep padding the count with an id that no longer exists. */}
+      {selectedTasks.length > 0 && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5">
           <span className="text-sm text-foreground">
-            {selected.size} selected
+            {selectedTasks.length} selected
           </span>
           <Button variant="destructive" size="sm" onClick={() => setDeleteTargets(selectedTasks)}>
             Delete selected
@@ -457,7 +486,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
               return (
                 <Fragment key={task.id}>
                   {renderRow(task, false)}
-                  {expanded.has(task.id) && children.map((child) => renderRow(child, true))}
+                  {isRowExpanded(task, children.length) && children.map((child) => renderRow(child, true))}
                 </Fragment>
               )
             })}

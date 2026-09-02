@@ -53,6 +53,24 @@ def test_a_null_date_is_kept_not_treated_as_absent():
     assert result == [{"taskId": 1, "dueDate": None}]
 
 
+def test_drops_an_out_of_enum_status_but_keeps_the_rest_of_the_update():
+    """A bad enum value would otherwise reach PATCH /api/tasks/{id} and come
+    back as a raw 422 about a request the user never knowingly made."""
+    raw = [{"task_id": 1, "status": "finished", "priority": "high"}]
+
+    result = _build_proposed_updates(raw, open_task_ids={1})
+
+    assert result == [{"taskId": 1, "priority": "high"}]
+
+
+def test_drops_the_whole_update_when_its_only_field_is_an_invalid_enum():
+    raw = [{"task_id": 1, "priority": "critical"}]
+
+    result = _build_proposed_updates(raw, open_task_ids={1})
+
+    assert result == []
+
+
 def test_processes_a_mixed_batch_keeping_only_the_valid_entries():
     raw = [
         {"task_id": 1, "status": "done"},

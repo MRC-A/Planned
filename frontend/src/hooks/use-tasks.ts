@@ -2,7 +2,7 @@
 // success. Deliberately simple (refetch over optimistic updates) since the
 // task list is small and local.
 import { useCallback, useEffect, useState } from 'react'
-import { bulkDeleteTasks, createTask, deleteTask, listTasks, updateTask } from '@/lib/api'
+import { bulkDeleteTasks, createTask, listTasks, updateTask } from '@/lib/api'
 import type { Task, TaskDraft } from '@/types/task'
 
 export function useTasks() {
@@ -43,14 +43,10 @@ export function useTasks() {
     [refresh],
   )
 
-  const remove = useCallback(
-    async (id: number) => {
-      await deleteTask(id)
-      await refresh()
-    },
-    [refresh],
-  )
-
+  // Deleting one task and deleting many go through the same bulk endpoint —
+  // the Table's per-row trash icon just passes a one-element array (see
+  // CLAUDE.md). `DELETE /api/tasks/{id}` still exists server-side for direct
+  // API use, it simply has no frontend caller.
   const bulkRemove = useCallback(
     async (ids: number[]) => {
       await bulkDeleteTasks(ids)
@@ -59,5 +55,5 @@ export function useTasks() {
     [refresh],
   )
 
-  return { tasks, loading, error, refresh, add, edit, remove, bulkRemove }
+  return { tasks, loading, error, refresh, add, edit, bulkRemove }
 }
