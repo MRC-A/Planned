@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
+import TaskDetailDialog from '@/components/task-detail-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
 import { PRIORITY_BADGE_VARIANT, PRIORITY_LABEL, PRIORITY_WEIGHT, formatDate } from '@/lib/task-display'
 import type { Task } from '@/types/task'
@@ -34,6 +35,7 @@ function compareByDueDate(a: Task, b: Task): number {
 
 export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps) {
   const [sortMode, setSortMode] = useState<SortMode>('priority')
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('todo')
 
   // Hidden by default (see hooks/use-show-completed.ts). When shown, keep
@@ -80,11 +82,14 @@ export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps
           {sorted.map((task) => (
             <li
               key={task.id}
-              className={`flex items-center gap-3 rounded-lg border border-border px-4 py-3 ${
+              onClick={() => setDetailTask(task)}
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border border-border px-4 py-3 transition-colors hover:bg-muted/50 ${
                 task.status === 'done' ? 'bg-done' : 'bg-card'
               }`}
             >
-              <Checkbox checked={task.status === 'done'} onCheckedChange={() => onToggleDone(task)} />
+              <span onClick={(e) => e.stopPropagation()}>
+                <Checkbox checked={task.status === 'done'} onCheckedChange={() => onToggleDone(task)} />
+              </span>
               <span
                 className={`flex-1 text-sm font-medium ${
                   task.status === 'done' ? 'text-muted-foreground line-through' : 'text-foreground'
@@ -98,6 +103,13 @@ export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps
           ))}
         </ul>
       )}
+
+      <TaskDetailDialog
+        task={detailTask}
+        tasks={tasks}
+        open={detailTask !== null}
+        onOpenChange={(o) => !o && setDetailTask(null)}
+      />
     </div>
   )
 }

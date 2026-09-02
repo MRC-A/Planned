@@ -23,6 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
+import TaskDetailDialog from '@/components/task-detail-dialog'
 import TaskFormDialog from '@/components/task-form-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
 import {
@@ -104,6 +105,7 @@ function taskTitle(tasks: Task[], id: number | null): string | null {
 export default function TableView({ tasks, loading, error, onCreate, onEdit, onCycleStatus, onDelete }: TableViewProps) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [sortMode, setSortMode] = useState<SortMode>('none')
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('table')
 
   // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
@@ -138,12 +140,19 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
       .join(' ')
 
     return (
-      <TableRow key={task.id} className={rowClassName || undefined}>
+      <TableRow
+        key={task.id}
+        className={`cursor-pointer ${rowClassName}`.trim() || undefined}
+        onClick={() => setDetailTask(task)}
+      >
         <TableCell className="font-medium text-foreground">
           <div className="flex items-center gap-1" style={isSubtask ? { paddingLeft: '2rem' } : undefined}>
             {!isSubtask && children.length > 0 ? (
               <button
-                onClick={() => toggleExpanded(task.id)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleExpanded(task.id)
+                }}
                 className="text-muted-foreground hover:text-foreground"
                 title={isExpanded ? 'Collapse subtasks' : 'Show subtasks'}
               >
@@ -156,7 +165,13 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           </div>
         </TableCell>
         <TableCell>
-          <button onClick={() => onCycleStatus(task)} title="Click to advance status">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onCycleStatus(task)
+            }}
+            title="Click to advance status"
+          >
             <Badge variant={STATUS_BADGE_VARIANT[task.status]}>{STATUS_LABEL[task.status]}</Badge>
           </button>
         </TableCell>
@@ -181,7 +196,7 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
         </TableCell>
         <TableCell className="text-muted-foreground">{formatDate(task.updatedAt)}</TableCell>
         <TableCell>
-          <div className="flex">
+          <div className="flex" onClick={(e) => e.stopPropagation()}>
             <TaskFormDialog
               tasks={tasks}
               task={task}
@@ -283,6 +298,13 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
           </TableBody>
         </Table>
       </div>
+
+      <TaskDetailDialog
+        task={detailTask}
+        tasks={tasks}
+        open={detailTask !== null}
+        onOpenChange={(o) => !o && setDetailTask(null)}
+      />
     </div>
   )
 }

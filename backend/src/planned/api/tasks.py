@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from sqlmodel import Session, select
 
 from planned.db import engine
-from planned.models import Task, TaskCreate, TaskUpdate
+from planned.models import Task, TaskCreate, TaskStatus, TaskUpdate
 
 router = APIRouter()
 
@@ -44,6 +44,23 @@ def _validate_parent(session: Session, parent_id: Optional[int], task_id: Option
             )
 
 
+def _sync_progress_and_status(task: Task) -> None:
+    """Progress and status are two views of the same "is this done?" fact —
+    kept in sync in both directions rather than letting them silently
+    disagree (e.g. a "done" task stuck at 60%, or a 100%-complete task
+    still sitting in To-Do). Applied after every field assignment, on both
+    create and update, so it catches every entry point: the full edit
+    form, the Table status-cycle badge and To-Do checkbox (which only ever
+    send `status`), and tasks created directly at 100%/done.
+    If a single request set both fields to disagreeing values, reaching
+    100% wins — it's the more granular, deliberate signal of the two."""
+    if task.progress >= 100 and task.status != TaskStatus.DONE:
+        task.status = TaskStatus.DONE
+        task.progress = 100
+    elif task.status == TaskStatus.DONE and task.progress != 100:
+        task.progress = 100
+
+
 @router.get("/", response_model=list[Task])
 def list_tasks() -> list[Task]:
     with Session(engine) as session:
@@ -55,6 +72,7 @@ def create_task(payload: TaskCreate) -> Task:
     with Session(engine) as session:
         _validate_parent(session, payload.parent_id)
         task = Task.model_validate(payload.model_dump())
+        _sync_progress_and_status(task)
         session.add(task)
         session.commit()
         session.refresh(task)
@@ -72,6 +90,7 @@ def update_task(task_id: int, payload: TaskUpdate) -> Task:
             _validate_parent(session, updates["parent_id"], task_id=task_id)
         for field, value in updates.items():
             setattr(task, field, value)
+        _sync_progress_and_status(task)
         task.updated_at = datetime.utcnow()
         session.add(task)
         session.commit()

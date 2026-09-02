@@ -12,6 +12,7 @@
 // and are simply not shown (count surfaced below the chart).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
+import TaskDetailDialog from '@/components/task-detail-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
 import type { Task, TaskPriority } from '@/types/task'
 
@@ -124,6 +125,7 @@ export default function GanttView({ tasks }: GanttViewProps) {
   const [scale, setScale] = useState<Scale>('Week')
   const scrollRef = useRef<HTMLDivElement>(null)
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('gantt')
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
 
   // Subtasks never appear here (only in Table, when expanded, and in
   // To-Do) — see CLAUDE.md.
@@ -270,7 +272,13 @@ export default function GanttView({ tasks }: GanttViewProps) {
             )}
 
             {rows.map((row, i) => (
-              <GanttBarRow key={row.task.id} row={row} rowIndex={i + 2} groups={groups} />
+              <GanttBarRow
+                key={row.task.id}
+                row={row}
+                rowIndex={i + 2}
+                groups={groups}
+                onSelect={() => setDetailTask(row.task)}
+              />
             ))}
           </div>
         </div>
@@ -281,6 +289,13 @@ export default function GanttView({ tasks }: GanttViewProps) {
           {unscheduled} task{unscheduled === 1 ? '' : 's'} without a date not shown.
         </p>
       )}
+
+      <TaskDetailDialog
+        task={detailTask}
+        tasks={tasks}
+        open={detailTask !== null}
+        onOpenChange={(o) => !o && setDetailTask(null)}
+      />
     </div>
   )
 }
@@ -289,9 +304,10 @@ interface GanttBarRowProps {
   row: GanttRow
   rowIndex: number
   groups: HeaderGroup[]
+  onSelect: () => void
 }
 
-function GanttBarRow({ row, rowIndex, groups }: GanttBarRowProps) {
+function GanttBarRow({ row, rowIndex, groups, onSelect }: GanttBarRowProps) {
   const { task, startOffset, durationDays } = row
   // Done overrides the priority color on both the label cell and the bar —
   // only reachable once "Show completed" reveals the row at all.
@@ -299,7 +315,8 @@ function GanttBarRow({ row, rowIndex, groups }: GanttBarRowProps) {
   return (
     <>
       <div
-        className={`sticky left-0 z-10 flex items-center truncate border-r border-b border-border px-2 text-xs font-medium text-foreground ${
+        onClick={onSelect}
+        className={`sticky left-0 z-10 flex cursor-pointer items-center truncate border-r border-b border-border px-2 text-xs font-medium text-foreground hover:brightness-95 ${
           isDone ? 'bg-done' : 'bg-card'
         }`}
         style={{ gridRow: rowIndex, gridColumn: 1 }}
@@ -315,7 +332,8 @@ function GanttBarRow({ row, rowIndex, groups }: GanttBarRowProps) {
         />
       ))}
       <div
-        className={`m-1 overflow-hidden rounded ${isDone ? 'bg-done' : PRIORITY_BAR_CLASS[task.priority]}`}
+        onClick={onSelect}
+        className={`m-1 cursor-pointer overflow-hidden rounded ${isDone ? 'bg-done' : PRIORITY_BAR_CLASS[task.priority]}`}
         style={{ gridRow: rowIndex, gridColumn: `${startOffset + 2} / span ${durationDays}` }}
         title={`${task.title} — ${task.progress}%`}
       >

@@ -2,10 +2,12 @@
 // single day if it only has one of the two dates). Subtasks never appear
 // here (only in Table, when expanded, and in To-Do) — see CLAUDE.md.
 // Tasks with neither date can't be placed and are simply not shown.
+import { useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import type { EventContentArg } from '@fullcalendar/core'
+import type { EventClickArg, EventContentArg } from '@fullcalendar/core'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
+import TaskDetailDialog from '@/components/task-detail-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
 import { DONE_BG_COLOR, DONE_TEXT_COLOR, PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
 import '@/styles/calendar.css'
@@ -52,6 +54,7 @@ function renderEventContent(arg: EventContentArg) {
 
 export default function CalendarView({ tasks }: CalendarViewProps) {
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('calendar')
+  const [detailTask, setDetailTask] = useState<Task | null>(null)
 
   const topLevel = tasks.filter((t) => t.parentId === null)
   // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
@@ -61,6 +64,11 @@ export default function CalendarView({ tasks }: CalendarViewProps) {
   const hiddenCount = topLevel.length - visible.length
   const events = toEvents(visible)
   const unscheduled = visible.length - events.length
+
+  function handleEventClick(info: EventClickArg) {
+    const clicked = visible.find((t) => String(t.id) === info.event.id)
+    if (clicked) setDetailTask(clicked)
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -79,6 +87,7 @@ export default function CalendarView({ tasks }: CalendarViewProps) {
           height="auto"
           events={events}
           eventContent={renderEventContent}
+          eventClick={handleEventClick}
         />
       </div>
       {unscheduled > 0 && (
@@ -86,6 +95,13 @@ export default function CalendarView({ tasks }: CalendarViewProps) {
           {unscheduled} task{unscheduled === 1 ? '' : 's'} without a date not shown.
         </p>
       )}
+
+      <TaskDetailDialog
+        task={detailTask}
+        tasks={tasks}
+        open={detailTask !== null}
+        onOpenChange={(o) => !o && setDetailTask(null)}
+      />
     </div>
   )
 }
