@@ -1,14 +1,20 @@
 """Chat endpoint: forwards the conversation to the local LLM, which can call
-the `propose_tasks` tool to suggest one or more new tasks — optionally
-structured as a top-level task plus subtasks.
+one of two tools — `propose_tasks` to suggest new tasks (optionally
+structured as a top-level task plus subtasks), or `propose_task_updates`
+(F5) to suggest changes to the user's existing open tasks: rescheduling,
+changing status/priority, or editing any other field.
 
-The backend never creates anything from a tool call itself — it just
-returns the proposal to the frontend, which shows it to the user for
-confirmation before actually creating the tasks via the normal
-POST /api/tasks/ endpoint. This endpoint is otherwise read-only and
-stateless: it loads the user's current open tasks (with their subtask
-relationships) to give the model context for scheduling, but doesn't
-write anything.
+The backend never creates or writes anything from a tool call itself — it
+just returns the proposal to the frontend, which shows it to the user for
+confirmation before actually applying it via the normal POST/PATCH
+/api/tasks/ endpoints. This is *why* propose_task_updates is safe to add
+without first landing S2 (prompt-injection hardening, see CLAUDE.md): the
+confirmation step — not the model's own judgment — is the security
+boundary, same as it already was for propose_tasks, and that doesn't
+change by adding a second tool that follows the identical propose-then-
+confirm shape. This endpoint is otherwise read-only and stateless: it
+loads the user's current open tasks (with their subtask relationships) to
+give the model context for scheduling, but doesn't write anything.
 """
 from datetime import date
 
@@ -77,6 +83,68 @@ PROPOSE_TASKS_TOOL = {
     },
 }
 
+PROPOSE_TASK_UPDATES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "propose_task_updates",
+        "description": (
+            "Propose changes to one or more of the user's EXISTING open tasks — "
+            "rescheduling, marking done/in-progress/to-do, changing priority, or "
+            "editing any other field. Only for tasks already listed in 'The "
+            "user's current open tasks' below, referenced by the [id N] shown "
+            "there — never invent an id. To create a brand-new task, use "
+            "propose_tasks instead. Call this once you have enough information — "
+            "don't call it just to ask a clarifying question, and don't call it "
+            "more than once per reply."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "description": (
+                            "Only include the fields that are actually changing — "
+                            "leave every other field out entirely so it stays "
+                            "untouched (e.g. rescheduling a task means only "
+                            "task_id + start_date/due_date, nothing else)."
+                        ),
+                        "properties": {
+                            "task_id": {
+                                "type": "integer",
+                                "description": "The id of an existing open task, from the '[id N]' shown in the list below.",
+                            },
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "status": {
+                                "type": "string",
+                                "enum": ["todo", "in_progress", "done"],
+                            },
+                            "priority": {
+                                "type": "string",
+                                "enum": ["low", "medium", "high", "urgent"],
+                            },
+                            "start_date": {
+                                "type": ["string", "null"],
+                                "description": "Absolute date as YYYY-MM-DD, or null to clear it.",
+                            },
+                            "due_date": {
+                                "type": ["string", "null"],
+                                "description": "Absolute date as YYYY-MM-DD, or null to clear it.",
+                            },
+                            "duration_hours": {"type": ["number", "null"]},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["task_id"],
+                    },
+                },
+            },
+            "required": ["updates"],
+        },
+    },
+}
+
 
 class ChatMessage(BaseModel):
     role: str
@@ -102,11 +170,16 @@ class ChatResponse(BaseModel):
     role: str = "assistant"
     content: str
     proposed_tasks: list[ProposedTask] | None = None
+    # Plain dicts rather than a strict Pydantic model — each one carries
+    # only the keys the model actually included (see
+    # _build_proposed_updates), so a partial PATCH stays partial: an
+    # omitted field means "leave it alone", not "clear it". A fixed-field
+    # model would force every field to serialize (as null) whether the
+    # model meant to touch it or not.
+    proposed_updates: list[dict] | None = None
 
 
-def _existing_tasks_summary() -> str:
-    with Session(engine) as session:
-        tasks = session.exec(select(Task).where(Task.status != TaskStatus.DONE)).all()
+def _existing_tasks_summary(tasks: list[Task]) -> str:
     if not tasks:
         return "The user currently has no open tasks."
     by_id = {t.id: t for t in tasks}
@@ -117,7 +190,7 @@ def _existing_tasks_summary() -> str:
         if t.parent_id is not None and t.parent_id in by_id:
             parent_note = f', subtask of "{by_id[t.parent_id].title}"'
         lines.append(
-            f"- {t.title} (priority: {t.priority.value}, "
+            f"- [id {t.id}] {t.title} (priority: {t.priority.value}, "
             f"start: {t.start_date.date().isoformat() if t.start_date else 'none'}, "
             f"due: {t.due_date.date().isoformat() if t.due_date else 'none'}"
             f"{parent_note})"
@@ -148,7 +221,43 @@ def _sanitize_parent_refs(tasks: list[ProposedTask]) -> None:
             t.parent_ref = None
 
 
-def _build_system_prompt() -> str:
+# snake_case (the tool schema, matching the rest of this API) -> camelCase
+# (what the frontend's TaskPatch expects).
+_UPDATE_FIELD_MAP = {
+    "title": "title",
+    "description": "description",
+    "status": "status",
+    "priority": "priority",
+    "start_date": "startDate",
+    "due_date": "dueDate",
+    "duration_hours": "durationHours",
+    "tags": "tags",
+}
+
+
+def _build_proposed_updates(raw_updates: list, open_task_ids: set[int]) -> list[dict]:
+    """Turn the model's raw tool-call arguments into what the frontend
+    expects. An update targeting a task_id that isn't a real, currently-open
+    task (hallucinated, already done, or already deleted) is dropped rather
+    than failing the whole batch — same "degrade, don't reject the batch"
+    spirit as _sanitize_parent_refs, and doubly important here since these
+    ids come from the model referencing free-form context rather than an
+    index it fully controls."""
+    proposed = []
+    for raw in raw_updates:
+        if not isinstance(raw, dict):
+            continue
+        task_id = raw.get("task_id")
+        if not isinstance(task_id, int) or task_id not in open_task_ids:
+            continue
+        patch = {camel: raw[snake] for snake, camel in _UPDATE_FIELD_MAP.items() if snake in raw}
+        if not patch:
+            continue
+        proposed.append({"taskId": task_id, **patch})
+    return proposed
+
+
+def _build_system_prompt(tasks: list[Task]) -> str:
     today = date.today()
     return (
         "You are the assistant inside Planned, a task and project planning app. "
@@ -163,7 +272,18 @@ def _build_system_prompt() -> str:
         "unrelated to software (e.g. 'buy bread' is a perfectly good task with a "
         "small duration_hours estimate) — propose it like any other.\n\n"
         f"Today is {today.strftime('%A')}, {today.isoformat()}.\n\n"
-        f"{_existing_tasks_summary()}\n\n"
+        f"{_existing_tasks_summary(tasks)}\n\n"
+        "You have two tools. Use propose_task_updates when the user is talking "
+        "about a task that already exists in the list above (rescheduling it, "
+        "marking it done/in-progress, changing its priority, editing anything "
+        "about it) — reference it by the '[id N]' shown there, and only include "
+        "the fields that are actually changing. 'Shift everything by a week' "
+        "means one propose_task_updates call with one entry per affected task, "
+        "each with new start_date/due_date. If you can't confidently tell which "
+        "existing task the user means (an ambiguous or partial title), don't "
+        "guess an id — ask a clarifying question in plain text instead of "
+        "calling the tool. Use propose_tasks — covered next — only for "
+        "something genuinely new.\n\n"
         "When the user asks you to create one or more tasks, call the propose_tasks "
         "tool — don't call it just to ask a clarifying question, and don't call it "
         "more than once per reply. For EVERY proposed task, fill in as much of the "
@@ -206,10 +326,14 @@ def _build_system_prompt() -> str:
 
 @router.post("/", response_model=ChatResponse)
 def send_message(request: ChatRequest) -> ChatResponse:
-    messages = [{"role": "system", "content": _build_system_prompt()}]
+    with Session(engine) as session:
+        open_tasks = session.exec(select(Task).where(Task.status != TaskStatus.DONE)).all()
+    open_task_ids = {t.id for t in open_tasks}
+
+    messages = [{"role": "system", "content": _build_system_prompt(open_tasks)}]
     messages += [m.model_dump() for m in request.messages]
     try:
-        result = _llm.chat(messages, tools=[PROPOSE_TASKS_TOOL])
+        result = _llm.chat(messages, tools=[PROPOSE_TASKS_TOOL, PROPOSE_TASK_UPDATES_TOOL])
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -217,6 +341,7 @@ def send_message(request: ChatRequest) -> ChatResponse:
         ) from exc
 
     tool_call = result["tool_call"]
+
     if tool_call and tool_call["name"] == "propose_tasks":
         raw_tasks = tool_call["arguments"].get("tasks", [])
         # The model occasionally emits a tool call missing a required field
@@ -237,5 +362,16 @@ def send_message(request: ChatRequest) -> ChatResponse:
             )
         content = result["content"] or f"I'd suggest creating {len(proposed)} task(s) — review below."
         return ChatResponse(content=content, proposed_tasks=proposed)
+
+    if tool_call and tool_call["name"] == "propose_task_updates":
+        raw_updates = tool_call["arguments"].get("updates", [])
+        proposed_updates = _build_proposed_updates(raw_updates, open_task_ids)
+        if not proposed_updates:
+            return ChatResponse(
+                content=result["content"]
+                or "I couldn't match that to one of your open tasks — could you say which one you mean?"
+            )
+        content = result["content"] or f"I'd suggest updating {len(proposed_updates)} task(s) — review below."
+        return ChatResponse(content=content, proposed_updates=proposed_updates)
 
     return ChatResponse(content=result["content"])

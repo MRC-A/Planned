@@ -1,6 +1,6 @@
 // Thin fetch wrapper around the backend task API — converts between the
 // backend's snake_case/comma-separated shape and the frontend Task type.
-import type { ProposedTask, Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
+import type { ProposedTask, ProposedTaskUpdate, Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
 
 const API_BASE = '/api/tasks'
 
@@ -96,6 +96,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   proposedTasks?: ProposedTask[]
+  proposedUpdates?: ProposedTaskUpdate[]
 }
 
 interface ApiProposedTask {
@@ -112,6 +113,11 @@ interface ApiProposedTask {
 interface ApiChatResponse {
   content: string
   proposed_tasks: ApiProposedTask[] | null
+  // Already camelCase, unlike proposed_tasks — the backend builds these
+  // (api/chat.py::_build_proposed_updates) with the frontend's TaskPatch
+  // key names directly, and only the keys that actually changed, so
+  // there's no fromApi-style conversion to do here.
+  proposed_updates: ProposedTaskUpdate[] | null
 }
 
 function proposedTaskFromApi(raw: ApiProposedTask): ProposedTask {
@@ -151,6 +157,7 @@ export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatMess
     role: 'assistant',
     content: raw.content,
     proposedTasks: raw.proposed_tasks?.map(proposedTaskFromApi),
+    proposedUpdates: raw.proposed_updates ?? undefined,
   }
 }
 

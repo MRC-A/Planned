@@ -20,8 +20,14 @@ class LocalLLMClient:
         """Send a conversation, optionally offering tool(s) the model can call.
 
         Returns {"content": str, "tool_call": {"name": str, "arguments": dict} | None}.
-        Only the first tool call is surfaced — every caller in this app only
-        ever offers a single tool, so there's nothing to disambiguate.
+        Only the first tool call is surfaced. api/chat.py now offers two
+        tools (propose_tasks, propose_task_updates) in the same request, but
+        still expects the model to pick one per reply and call it at most
+        once — confirmed so far against LM Studio's default model (Gemma),
+        which has only ever returned a single tool call even with two
+        offered. If a model that emits multiple tool calls per turn shows up,
+        this drops every call after the first with no error — worth
+        revisiting then, not preemptively.
 
         TODO: streaming.
         """
