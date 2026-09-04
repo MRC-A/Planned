@@ -5,26 +5,34 @@
 @custom-variant dark (&:is(.dark *));
 
 /* Warm, wood-inspired palette (light brown / walnut / sand) kept low-chroma
-   on purpose so it reads as sober and professional rather than rustic. */
+   on purpose so it reads as sober and professional rather than rustic.
+
+   Light and dark are tuned to the same two rules, so neither reads as the
+   washed-out sibling of the other:
+     - surface chroma stays in the 0.010-0.034 band (the light side used to
+       sit at 0.006-0.025, which read as plain white rather than warm);
+     - background and card keep a visible luminance gap (~0.02 light,
+       ~0.04 dark) so the nav, the content area and the chat sidebar read as
+       distinct planes instead of one flat sheet. */
 
 :root {
   /* Tells the browser to render its own chrome (scrollbars, native
      form controls, the canvas behind the page) to match — without it a
      dark page keeps light scrollbars. */
   color-scheme: light;
-  --background: oklch(0.985 0.008 75);
+  --background: oklch(0.975 0.016 72);
   --foreground: oklch(0.24 0.025 45);
-  --card: oklch(0.995 0.006 75);
+  --card: oklch(0.995 0.01 75);
   --card-foreground: oklch(0.24 0.025 45);
-  --popover: oklch(0.995 0.006 75);
+  --popover: oklch(0.995 0.01 75);
   --popover-foreground: oklch(0.24 0.025 45);
   --primary: oklch(0.44 0.07 50);
   --primary-foreground: oklch(0.98 0.008 75);
-  --secondary: oklch(0.93 0.018 65);
+  --secondary: oklch(0.915 0.028 65);
   --secondary-foreground: oklch(0.32 0.035 48);
-  --muted: oklch(0.945 0.014 68);
+  --muted: oklch(0.935 0.022 68);
   --muted-foreground: oklch(0.48 0.03 52);
-  --accent: oklch(0.89 0.025 60);
+  --accent: oklch(0.875 0.034 60);
   --accent-foreground: oklch(0.28 0.035 48);
   --destructive: oklch(0.55 0.19 32);
   /* Slightly-green tint for completed tasks — same low-chroma treatment as
@@ -32,8 +40,8 @@
      so "done" reads as a distinct signal from priority colors. */
   --done: oklch(0.93 0.05 150);
   --done-foreground: oklch(0.32 0.06 150);
-  --border: oklch(0.87 0.016 62);
-  --input: oklch(0.87 0.016 62);
+  --border: oklch(0.855 0.026 62);
+  --input: oklch(0.855 0.026 62);
   --ring: oklch(0.58 0.06 52);
   --chart-1: oklch(0.75 0.05 60);
   --chart-2: oklch(0.6 0.07 50);
@@ -41,13 +49,13 @@
   --chart-4: oklch(0.38 0.05 42);
   --chart-5: oklch(0.28 0.03 40);
   --radius: 0.625rem;
-  --sidebar: oklch(0.96 0.012 68);
+  --sidebar: oklch(0.95 0.02 68);
   --sidebar-foreground: oklch(0.24 0.025 45);
   --sidebar-primary: oklch(0.44 0.07 50);
   --sidebar-primary-foreground: oklch(0.98 0.008 75);
-  --sidebar-accent: oklch(0.91 0.02 62);
+  --sidebar-accent: oklch(0.895 0.028 62);
   --sidebar-accent-foreground: oklch(0.28 0.035 48);
-  --sidebar-border: oklch(0.87 0.016 62);
+  --sidebar-border: oklch(0.855 0.026 62);
   --sidebar-ring: oklch(0.58 0.06 52);
   --font-sans: 'Geist Variable', sans-serif;
   --font-heading: var(--font-sans);
