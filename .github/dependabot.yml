@@ -1,0 +1,43 @@
+# Dependency updates for a public repo that previously had no automated
+# watch at all (S5). Weekly rather than daily: this is a single-maintainer
+# local app, and a daily PR stream would be noise nobody reads.
+#
+# Grouping matters here. The npm ecosystem's build tooling moves as a set —
+# a Vite bump usually needs its React and Tailwind plugins to move with it,
+# and separate PRs for each would each fail peer resolution on their own.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      build-tooling:
+        patterns:
+          - vite
+          - "@vitejs/*"
+          - "@tailwindcss/*"
+          - tailwindcss
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+      fullcalendar:
+        # These three must stay on one major — mixing them breaks the TS
+        # types (see CLAUDE.md's Calendar note).
+        patterns:
+          - "@fullcalendar/*"
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

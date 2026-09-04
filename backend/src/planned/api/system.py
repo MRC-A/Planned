@@ -14,12 +14,47 @@ import subprocess
 import sys
 import threading
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter()
 
 FRONTEND_PORT = 5173
 BACKEND_PORT = 8000
+
+# S1 — CSRF on the shutdown route.
+#
+# With no body and no custom header this was a CORS "simple request": no
+# preflight, so any page the user happened to have open could fire
+# fetch('http://localhost:8000/api/system/shutdown', {method: 'POST',
+# mode: 'no-cors'}) and close the app. CORS blocks *reading* a cross-origin
+# response; it never blocked sending the request.
+#
+# Two independent guards, both required:
+#   1. A custom request header. Its presence is what makes the browser treat
+#      the call as non-simple and send a preflight first, which CORSMiddleware
+#      answers with our origin allowlist — so the cross-site request is
+#      refused before it is ever sent. The header value is not a secret;
+#      requiring it server-side as well just keeps the rule testable.
+#   2. An Origin allowlist. A browser always attaches Origin to a cross-site
+#      request, so this catches the same attack independently of (1).
+#
+# Scope, stated plainly: this closes the documented vector — a random website
+# in the user's browser. It does NOT defend against a malicious process
+# already running on this machine, and it cannot: such a process can kill the
+# ports directly without going near this API. A startup token wouldn't change
+# that either, since any local process could read it the same way the UI does.
+CLIENT_HEADER = "X-Planned-Client"
+ALLOWED_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
+
+
+def _reject_cross_site(request: Request) -> None:
+    if CLIENT_HEADER.lower() not in (h.lower() for h in request.headers):
+        raise HTTPException(status_code=403, detail=f"Missing {CLIENT_HEADER} header.")
+    origin = request.headers.get("origin")
+    # No Origin at all means it isn't a browser cross-site call — curl and
+    # the launcher script land here, and they're already local processes.
+    if origin is not None and origin not in ALLOWED_ORIGINS:
+        raise HTTPException(status_code=403, detail="Cross-site shutdown requests are refused.")
 
 
 def _kill_process_on_port(port: int) -> None:
@@ -53,9 +88,14 @@ def _shutdown() -> None:
 
 
 @router.post("/shutdown")
-def shutdown() -> dict[str, str]:
+def shutdown(request: Request) -> dict[str, str]:
+    _reject_cross_site(request)
     # Respond to the client first, then exit shortly after — the shutdown
     # kills this process, so doing it before responding would drop the
-    # request instead of returning a clean acknowledgement.
+    # request instead of returning a clean acknowledgement. Pass the function
+    # by reference, not via a lambda: the reference is resolved now, while a
+    # test's monkeypatch is still in place, whereas a lambda would look it up
+    # when the timer fires — potentially after the patch is gone, killing the
+    # developer's real dev servers.
     threading.Timer(0.3, _shutdown).start()
     return {"status": "shutting down"}

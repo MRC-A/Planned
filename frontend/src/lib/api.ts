@@ -179,7 +179,14 @@ export async function sendChatMessage(
 // is the expected outcome, not a bug — swallow it.
 export async function shutdownApp(): Promise<void> {
   try {
-    await fetch('/api/system/shutdown', { method: 'POST' })
+    // The custom header is required (S1): without it this is a CORS "simple
+    // request", so any site open in the browser could POST it and close the
+    // app with no preflight to stop them. Its presence is what makes the
+    // browser preflight the call; the backend rejects the request without it.
+    await fetch('/api/system/shutdown', {
+      method: 'POST',
+      headers: { 'X-Planned-Client': 'planned-ui' },
+    })
   } catch {
     // expected once the backend exits
   }

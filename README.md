@@ -34,4 +34,19 @@ cd backend && uvicorn planned.main:app --reload   # http://localhost:8000
 cd frontend && npm run dev                         # http://localhost:5173
 ```
 
+**Dependency audit:**
+
+```
+cd frontend && npm run audit
+cd backend && python -m pip_audit
+```
+
+Dependabot (`.github/dependabot.yml`) also opens weekly update PRs.
+
+## A note on scope
+
+Planned is built to run on **localhost, for one person**. It has no accounts, no authentication and no authorization, because there is nothing to tell apart — anyone who can reach the port is the user. Don't put it on a network without adding those first: `POST /api/system/shutdown` in particular kills processes by port, and the task API is wide open by design.
+
+Within that scope it does defend against the things a local app is actually exposed to — chiefly other websites open in your browser, which can reach `localhost` even though they can't read the answers. The shutdown route is CSRF-guarded, task text is fenced as data before it reaches the LLM, request sizes are bounded, and error responses don't echo internals.
+
 See `CLAUDE.md` for architecture details.
