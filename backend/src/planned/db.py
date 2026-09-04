@@ -56,6 +56,7 @@ def _backup_db() -> None:
 # field is added to an existing model.
 _COLUMN_MIGRATIONS = [
     ("task", "parent_id", "INTEGER REFERENCES task(id)"),
+    ("task", "recurrence", "TEXT"),
 ]
 
 # Columns removed from a model after the DB was first created. Symmetric to

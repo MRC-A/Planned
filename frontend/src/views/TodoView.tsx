@@ -3,6 +3,7 @@
 // hooks/use-show-completed.ts); when shown via the toggle, they sink to
 // the bottom and render strikethrough instead of being filtered out.
 import { useState } from 'react'
+import { Repeat } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -97,6 +98,11 @@ export default function TodoView({ tasks, loading, onToggleDone }: TodoViewProps
               >
                 {task.title}
               </span>
+              {task.recurrence && (
+                <span title="Repeats" className="shrink-0 text-muted-foreground">
+                  <Repeat size={12} aria-label="Repeats" />
+                </span>
+              )}
               <span className="text-xs text-muted-foreground">{formatDate(task.dueDate)}</span>
               <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]}>{PRIORITY_LABEL[task.priority]}</Badge>
             </li>

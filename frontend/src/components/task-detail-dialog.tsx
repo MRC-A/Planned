@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   PRIORITY_BADGE_VARIANT,
   PRIORITY_LABEL,
+  RECURRENCE_LABEL,
   STATUS_BADGE_VARIANT,
   STATUS_LABEL,
   formatDate,
@@ -62,6 +63,9 @@ function TaskSummary({ task, tasks }: { task: Task; tasks: Task[] }) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={STATUS_BADGE_VARIANT[task.status]}>{STATUS_LABEL[task.status]}</Badge>
           <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]}>{PRIORITY_LABEL[task.priority]}</Badge>
+          {task.recurrence && (
+            <Badge variant="outline">Repeats {RECURRENCE_LABEL[task.recurrence].toLowerCase()}</Badge>
+          )}
           {parentTitle && <span className="text-xs text-muted-foreground">Subtask of "{parentTitle}"</span>}
         </div>
 

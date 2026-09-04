@@ -19,6 +19,7 @@ const apiTask: ApiTask = {
   depends_on: 3,
   parent_id: 2,
   tags: 'work, urgent',
+  recurrence: 'weekly',
   created_at: '2026-09-01T10:00:00',
   updated_at: '2026-09-02T11:00:00',
 }
@@ -41,6 +42,7 @@ describe('fromApi', () => {
       dependsOn: 3,
       parentId: 2,
       tags: ['work', 'urgent'],
+      recurrence: 'weekly',
       createdAt: '2026-09-01T10:00:00',
       updatedAt: '2026-09-02T11:00:00',
     })

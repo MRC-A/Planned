@@ -37,9 +37,9 @@ def test_column_drop_migration_removes_a_stale_not_null_column(tmp_path, monkeyp
 def test_column_drop_migration_is_a_no_op_on_an_already_current_schema(tmp_path, monkeypatch):
     """A database created fresh from the current model never had `progress`
     at all — make sure the migration doesn't choke when there's nothing to
-    drop. Table also lacks `parent_id`, so the existing ADD migration runs
-    alongside it in the same call — this is really a test that the two
-    don't interfere with each other."""
+    drop. Table also lacks `parent_id`/`recurrence`, so the existing ADD
+    migrations run alongside it in the same call — this is really a test
+    that all of these don't interfere with each other."""
     engine = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE task (id INTEGER PRIMARY KEY, title TEXT NOT NULL)"))
@@ -49,4 +49,4 @@ def test_column_drop_migration_is_a_no_op_on_an_already_current_schema(tmp_path,
 
     with engine.begin() as conn:
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(task)"))}
-        assert columns == {"id", "title", "parent_id"}
+        assert columns == {"id", "title", "parent_id", "recurrence"}

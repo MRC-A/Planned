@@ -5,6 +5,12 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done'
 
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
+// F6 — null means "does not repeat". See backend/src/planned/api/tasks.py's
+// _spawn_next_occurrence for what happens when a recurring task is marked
+// done: it isn't tracked as a rule + generated instances, completing one
+// just creates the next occurrence.
+export type Recurrence = 'daily' | 'weekly' | 'monthly'
+
 export interface Task {
   id: number
   title: string
@@ -17,6 +23,7 @@ export interface Task {
   dependsOn: number | null
   parentId: number | null
   tags: string[]
+  recurrence: Recurrence | null
   createdAt: string
   updatedAt: string
 }

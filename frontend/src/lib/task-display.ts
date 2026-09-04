@@ -1,7 +1,7 @@
 // Shared label/formatting helpers so the Table and To-Do views render task
 // fields consistently.
 
-import type { TaskPriority, TaskStatus } from '@/types/task'
+import type { Recurrence, TaskPriority, TaskStatus } from '@/types/task'
 
 export const PRIORITY_LABEL: Record<TaskPriority, string> = {
   low: 'Low',
@@ -64,6 +64,12 @@ export const STATUS_BADGE_VARIANT: Record<TaskStatus, 'outline' | 'secondary' | 
 // task is done.
 export const DONE_BG_COLOR = 'var(--color-done)'
 export const DONE_TEXT_COLOR = 'var(--color-done-foreground)'
+
+export const RECURRENCE_LABEL: Record<Recurrence, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+}
 
 export function formatDate(value: string | null): string {
   if (!value) return '—'

@@ -21,8 +21,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { PRIORITY_LABEL, STATUS_LABEL } from '@/lib/task-display'
-import type { Task, TaskDraft, TaskPriority, TaskStatus } from '@/types/task'
+import { PRIORITY_LABEL, RECURRENCE_LABEL, STATUS_LABEL } from '@/lib/task-display'
+import type { Recurrence, Task, TaskDraft, TaskPriority, TaskStatus } from '@/types/task'
 
 interface TaskFormDialogProps {
   tasks: Task[]
@@ -33,8 +33,10 @@ interface TaskFormDialogProps {
 
 const PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 const STATUSES: TaskStatus[] = ['todo', 'in_progress', 'done']
+const RECURRENCES: Recurrence[] = ['daily', 'weekly', 'monthly']
 const NO_DEPENDENCY = 'none'
 const NO_PARENT = 'none'
+const NO_RECURRENCE = 'none'
 
 interface FormState {
   title: string
@@ -47,6 +49,7 @@ interface FormState {
   dependsOn: string
   parentId: string
   tags: string
+  recurrence: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -60,6 +63,7 @@ const EMPTY_FORM: FormState = {
   dependsOn: NO_DEPENDENCY,
   parentId: NO_PARENT,
   tags: '',
+  recurrence: NO_RECURRENCE,
 }
 
 function toFormState(task: Task | undefined): FormState {
@@ -77,6 +81,7 @@ function toFormState(task: Task | undefined): FormState {
     dependsOn: task.dependsOn !== null ? String(task.dependsOn) : NO_DEPENDENCY,
     parentId: task.parentId !== null ? String(task.parentId) : NO_PARENT,
     tags: task.tags.join(', '),
+    recurrence: task.recurrence ?? NO_RECURRENCE,
   }
 }
 
@@ -123,6 +128,7 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
           .split(',')
           .map((t) => t.trim())
           .filter(Boolean),
+        recurrence: form.recurrence === NO_RECURRENCE ? null : (form.recurrence as Recurrence),
       })
       setOpen(false)
     } finally {
@@ -214,6 +220,29 @@ export default function TaskFormDialog({ tasks, task, trigger, onSubmit }: TaskF
                 onChange={(e) => set('dueDate', e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="task-recurrence">Repeats</Label>
+            <Select value={form.recurrence} onValueChange={(v) => set('recurrence', v)}>
+              <SelectTrigger id="task-recurrence" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_RECURRENCE}>Never</SelectItem>
+                {RECURRENCES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {RECURRENCE_LABEL[r]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.recurrence !== NO_RECURRENCE && !form.startDate && !form.dueDate && (
+              <p className="text-xs text-muted-foreground">
+                Give it a start or due date — completing it is what creates the next occurrence, shifted
+                from whichever date it has.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

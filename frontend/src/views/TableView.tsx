@@ -4,7 +4,7 @@
 // see App.tsx/CLAUDE.md for the rule shared with Calendar and Gantt; To-Do
 // is the one view where subtasks show up unconditionally.
 import { Fragment, useState } from 'react'
-import { ChevronDown, ChevronRight, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, Repeat, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -288,6 +288,11 @@ export default function TableView({ tasks, loading, error, onCreate, onEdit, onC
               !isSubtask && <span className="w-3.5" />
             )}
             {task.title}
+            {task.recurrence && (
+              <span title="Repeats" className="shrink-0 text-muted-foreground">
+                <Repeat size={12} aria-label="Repeats" />
+              </span>
+            )}
           </div>
         </TableCell>
         <TableCell>

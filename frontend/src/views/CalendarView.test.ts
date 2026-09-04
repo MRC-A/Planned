@@ -23,6 +23,7 @@ function task(fields: Partial<Task>): Task {
     dependsOn: null,
     parentId: null,
     tags: [],
+    recurrence: null,
     createdAt: '2026-09-01T00:00:00',
     updatedAt: '2026-09-01T00:00:00',
     ...fields,

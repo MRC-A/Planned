@@ -1,6 +1,6 @@
 // Thin fetch wrapper around the backend task API — converts between the
 // backend's snake_case/comma-separated shape and the frontend Task type.
-import type { ProposedTask, ProposedTaskUpdate, Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
+import type { ProposedTask, ProposedTaskUpdate, Recurrence, Task, TaskDraft, TaskPatch, TaskPriority, TaskStatus } from '@/types/task'
 
 const API_BASE = '/api/tasks'
 
@@ -16,6 +16,7 @@ export interface ApiTask {
   depends_on: number | null
   parent_id: number | null
   tags: string | null
+  recurrence: Recurrence | null
   created_at: string
   updated_at: string
 }
@@ -37,6 +38,7 @@ export function fromApi(raw: ApiTask): Task {
     tags: raw.tags
       ? raw.tags.split(',').map((t) => t.trim()).filter(Boolean)
       : [],
+    recurrence: raw.recurrence,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   }
@@ -54,6 +56,7 @@ export function toApiPayload(draft: TaskPatch): Record<string, unknown> {
   if (draft.dependsOn !== undefined) payload.depends_on = draft.dependsOn
   if (draft.parentId !== undefined) payload.parent_id = draft.parentId
   if (draft.tags !== undefined) payload.tags = draft.tags.join(', ')
+  if (draft.recurrence !== undefined) payload.recurrence = draft.recurrence
   return payload
 }
 

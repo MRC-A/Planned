@@ -1,5 +1,6 @@
 """CRUD endpoints for tasks — the shared data all views read and write."""
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from planned.db import engine
-from planned.models import Task, TaskCreate, TaskUpdate
+from planned.models import RecurrenceRule, Task, TaskCreate, TaskStatus, TaskUpdate
 
 router = APIRouter()
 
@@ -79,6 +80,75 @@ def _validate_dates(start_date: Optional[datetime], due_date: Optional[datetime]
         raise HTTPException(status_code=400, detail="Due date cannot be earlier than the start date.")
 
 
+def _shift_by_recurrence(dt: datetime, rule: RecurrenceRule) -> datetime:
+    """One step forward on `rule`'s schedule.
+
+    Monthly keeps the same day-of-month, clamped to whatever the target
+    month actually has (Jan 31 -> Feb 28, or Feb 29 in a leap year) rather
+    than overflowing into the month after. `min(d, month_length)` is
+    monotonic non-decreasing in `d`, and the target month is the same for
+    both dates whenever they started in the same month — which is what
+    guarantees due >= start still holds on the shifted pair below; see
+    _spawn_next_occurrence."""
+    if rule == RecurrenceRule.DAILY:
+        return dt + timedelta(days=1)
+    if rule == RecurrenceRule.WEEKLY:
+        return dt + timedelta(days=7)
+    year = dt.year + dt.month // 12
+    month = dt.month % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _spawn_next_occurrence(session: Session, task: Task) -> Optional[Task]:
+    """Completing a recurring task creates its next occurrence, rather than
+    the app tracking a recurrence rule plus a set of generated instances —
+    the simplest model that still means "this comes back" (F6). Runs inside
+    the same transaction as the completion it's triggered by, so the two
+    either both land or neither does.
+
+    A no-op without at least one date: recurrence is a schedule, and an
+    undated task has nothing to shift from — spawning an identical undated
+    duplicate on every completion would just be clutter, not a schedule.
+
+    depends_on is deliberately NOT carried over: it names a specific task
+    instance, almost certainly the one just completed (or another that's
+    also done by now), and carrying it forward would create a new task that
+    depends on something already finished. parent_id IS carried over — the
+    new occurrence is a sibling under the same parent, which is the
+    unsurprising reading of "this recurring subtask happens again." Cloning
+    subtasks of a recurring parent is out of scope: the new occurrence is a
+    top-level clone shell, or a childless sibling if the source was itself a
+    subtask — see CLAUDE.md."""
+    if task.recurrence is None:
+        return None
+    if task.start_date is None and task.due_date is None:
+        return None
+
+    next_start = _shift_by_recurrence(task.start_date, task.recurrence) if task.start_date else None
+    next_due = _shift_by_recurrence(task.due_date, task.recurrence) if task.due_date else None
+    # Defense in depth (belt and suspenders, same spirit as C5): the shift
+    # above is reasoned to always preserve due >= start, but it costs
+    # nothing to actually check rather than trust the reasoning blindly.
+    _validate_dates(next_start, next_due)
+
+    clone = Task(
+        title=task.title,
+        description=task.description,
+        status=TaskStatus.TODO,
+        priority=task.priority,
+        start_date=next_start,
+        due_date=next_due,
+        duration_hours=task.duration_hours,
+        depends_on=None,
+        parent_id=task.parent_id,
+        tags=task.tags,
+        recurrence=task.recurrence,
+    )
+    session.add(clone)
+    return clone
+
+
 @router.get("/", response_model=list[Task])
 def list_tasks() -> list[Task]:
     with Session(engine) as session:
@@ -104,6 +174,10 @@ def update_task(task_id: int, payload: TaskUpdate) -> Task:
         task = session.get(Task, task_id)
         if task is None:
             raise HTTPException(status_code=404, detail="Task not found")
+        # Captured before any field is applied — this PATCH may itself be
+        # what sets status to done, and _spawn_next_occurrence (F6) only
+        # fires on that not-done -> done transition, not on staying done.
+        was_done = task.status == TaskStatus.DONE
         updates = payload.model_dump(exclude_unset=True)
         if "parent_id" in updates:
             _validate_parent(session, updates["parent_id"], task_id=task_id)
@@ -119,6 +193,12 @@ def update_task(task_id: int, payload: TaskUpdate) -> Task:
         for field, value in updates.items():
             setattr(task, field, value)
         task.updated_at = datetime.utcnow()
+        # F6 — the dates/recurrence this checks are the ones the task ends up
+        # with after the loop above, so rescheduling and completing in the
+        # same PATCH spawns the next occurrence from the new dates, not the
+        # ones being replaced.
+        if not was_done and task.status == TaskStatus.DONE:
+            _spawn_next_occurrence(session, task)
         session.add(task)
         session.commit()
         session.refresh(task)

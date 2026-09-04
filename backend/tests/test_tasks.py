@@ -253,3 +253,139 @@ def test_deleting_a_parent_and_its_child_together_still_works_with_fks_on(client
     assert response.status_code == 200
     assert sorted(response.json()["deleted"]) == sorted([parent["id"], child["id"]])
     assert client.get("/api/tasks/").json() == []
+
+
+# --- F6: recurring tasks -----------------------------------------------------
+
+
+def occurrences(client, title):
+    """All tasks sharing a title, oldest first — the completed source and
+    whatever got spawned from it."""
+    return sorted(
+        (t for t in client.get("/api/tasks/").json() if t["title"] == title),
+        key=lambda t: t["id"],
+    )
+
+
+def test_completing_a_daily_task_spawns_tomorrows_occurrence(client):
+    task = create(
+        client, title="Standup", start_date="2026-09-08", due_date="2026-09-08", recurrence="daily"
+    )
+
+    response = client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+    assert response.status_code == 200
+
+    rows = occurrences(client, "Standup")
+    assert len(rows) == 2
+    spawned = rows[1]
+    assert spawned["id"] != task["id"]
+    assert spawned["status"] == "todo"
+    assert spawned["recurrence"] == "daily"
+    assert spawned["start_date"][:10] == "2026-09-09"
+    assert spawned["due_date"][:10] == "2026-09-09"
+
+
+def test_completing_a_weekly_task_shifts_by_seven_days(client):
+    task = create(client, title="Review", due_date="2026-09-08", recurrence="weekly")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    spawned = occurrences(client, "Review")[1]
+    assert spawned["due_date"][:10] == "2026-09-15"
+    assert spawned["start_date"] is None  # only had a due date — stays that way
+
+
+def test_completing_a_monthly_task_clamps_an_overflowing_day(client):
+    # 2026 is not a leap year — Jan 31 has no equivalent in February.
+    task = create(client, title="Report", due_date="2026-01-31", recurrence="monthly")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert occurrences(client, "Report")[1]["due_date"][:10] == "2026-02-28"
+
+
+def test_monthly_recurrence_crosses_a_year_boundary(client):
+    task = create(client, title="Renewal", due_date="2026-12-15", recurrence="monthly")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert occurrences(client, "Renewal")[1]["due_date"][:10] == "2027-01-15"
+
+
+def test_completing_a_non_recurring_task_spawns_nothing(client):
+    task = create(client, title="One-off", due_date="2026-09-08")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert len(occurrences(client, "One-off")) == 1
+
+
+def test_completing_an_undated_recurring_task_spawns_nothing(client):
+    """Recurrence is a schedule — nothing to shift from without a date, and
+    spawning an identical undated duplicate on every completion would just
+    be clutter."""
+    task = create(client, title="Someday", recurrence="daily")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert len(occurrences(client, "Someday")) == 1
+
+
+def test_marking_an_already_done_task_done_again_does_not_spawn_twice(client):
+    task = create(client, title="Habit", due_date="2026-09-08", recurrence="daily")
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+    assert len(occurrences(client, "Habit")) == 2
+
+    # A second PATCH re-asserting the same status is not a transition.
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert len(occurrences(client, "Habit")) == 2
+
+
+def test_turning_off_recurrence_while_completing_prevents_a_spawn(client):
+    task = create(client, title="Trial run", due_date="2026-09-08", recurrence="daily")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done", "recurrence": None})
+
+    assert len(occurrences(client, "Trial run")) == 1
+
+
+def test_spawned_task_does_not_inherit_depends_on(client):
+    """depends_on names a specific instance — almost certainly the one just
+    completed. Carrying it forward would create a task depending on
+    something already finished."""
+    blocker = create(client, title="Blocker")
+    task = create(
+        client, title="Blocked", due_date="2026-09-08", recurrence="daily", depends_on=blocker["id"]
+    )
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert occurrences(client, "Blocked")[1]["depends_on"] is None
+
+
+def test_spawned_task_inherits_parent_id(client):
+    parent = create(client, title="Project")
+    task = create(
+        client, title="Weekly sync", due_date="2026-09-08", recurrence="weekly", parent_id=parent["id"]
+    )
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
+
+    assert occurrences(client, "Weekly sync")[1]["parent_id"] == parent["id"]
+
+
+def test_completing_and_rescheduling_in_the_same_patch_uses_the_new_dates(client):
+    """The dates that matter are the ones the task ends up with after this
+    PATCH — same rule as the date-ordering check in _validate_dates."""
+    task = create(client, title="Moved", due_date="2026-09-08", recurrence="daily")
+
+    client.patch(f"/api/tasks/{task['id']}", json={"status": "done", "due_date": "2026-10-01"})
+
+    assert occurrences(client, "Moved")[1]["due_date"][:10] == "2026-10-02"
+
+
+def test_recurrence_value_is_rejected_when_not_one_of_the_three(client):
+    response = client.post("/api/tasks/", json={"title": "x", "recurrence": "hourly"})
+
+    assert response.status_code == 422
