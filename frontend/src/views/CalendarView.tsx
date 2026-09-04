@@ -9,6 +9,7 @@ import type { EventClickArg, EventContentArg } from '@fullcalendar/core'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
 import TaskDetailDialog from '@/components/task-detail-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
+import { shiftISODate } from '@/lib/task-dates'
 import { DONE_BG_COLOR, DONE_TEXT_COLOR, PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
 import '@/styles/calendar.css'
 import type { Task } from '@/types/task'
@@ -17,23 +18,8 @@ interface CalendarViewProps {
   tasks: Task[]
 }
 
-function addDays(iso: string, days: number): string {
-  // Parse as local midnight (a bare "T00:00:00" with no timezone marker is
-  // what makes JS parse it as local time instead of UTC — same trick as
-  // GanttView's parseDate) and format back with local getters, never
-  // toISOString(). toISOString() always converts to UTC, which is exactly
-  // what caused C4: for a UTC+2 user, local midnight Oct 1 became 22:00 UTC
-  // on Sep 30, so a due date's "+1 day, exclusive end" adjustment silently
-  // lost a day and that day never rendered on the calendar.
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00`)
-  d.setDate(d.getDate() + days)
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function toEvents(tasks: Task[]) {
+// Exported for tests: this is where C4 lived (see lib/task-dates.ts).
+export function toEvents(tasks: Task[]) {
   return tasks
     .filter((t) => t.startDate || t.dueDate)
     .map((t) => {
@@ -44,7 +30,7 @@ function toEvents(tasks: Task[]) {
       const start = (t.startDate ?? t.dueDate!).slice(0, 10)
       // FullCalendar's all-day `end` is exclusive, so a due date needs +1 day
       // to actually cover that day on the grid.
-      const end = t.dueDate ? addDays(t.dueDate, 1) : addDays(start, 1)
+      const end = t.dueDate ? shiftISODate(t.dueDate, 1) : shiftISODate(start, 1)
       // Done overrides the priority color — only reachable once "Show
       // completed" reveals the event at all (see task-display.ts).
       const bg = t.status === 'done' ? DONE_BG_COLOR : PRIORITY_BG_COLOR[t.priority]

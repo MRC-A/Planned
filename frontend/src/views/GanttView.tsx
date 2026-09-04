@@ -21,6 +21,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
 import TaskDetailDialog from '@/components/task-detail-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
+import {
+  addDays,
+  daysBetween,
+  formatISODate,
+  parseISODate as parseDate,
+  startOfToday,
+  startOfWeek,
+} from '@/lib/task-dates'
 import type { Task, TaskPatch, TaskPriority } from '@/types/task'
 
 interface GanttViewProps {
@@ -76,40 +84,6 @@ interface DragPreview {
   // 'schedule' only — where the cursor is, for the floating ghost.
   pointer?: { x: number; y: number }
   dayIndex?: number | null
-}
-
-function parseDate(iso: string): Date {
-  // The backend returns full datetime strings ("2026-09-30T00:00:00"): take
-  // the date part and force local-midnight parsing. Never round-trip through
-  // toISOString() here — that's the C4 bug (see CLAUDE.md).
-  return new Date(`${iso.slice(0, 10)}T00:00:00`)
-}
-
-/** YYYY-MM-DD from local getters — same reason as above. */
-function formatISODate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / 86_400_000)
-}
-
-function addDays(d: Date, days: number): Date {
-  const copy = new Date(d)
-  copy.setDate(copy.getDate() + days)
-  return copy
-}
-
-function startOfWeek(d: Date): Date {
-  const day = d.getDay() // 0 = Sunday .. 6 = Saturday
-  return addDays(d, day === 0 ? -6 : 1 - day) // Monday-start week
-}
-
-function startOfToday(): Date {
-  const t = new Date()
-  t.setHours(0, 0, 0, 0)
-  return t
 }
 
 /**

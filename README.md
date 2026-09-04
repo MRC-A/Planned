@@ -34,6 +34,13 @@ cd backend && uvicorn planned.main:app --reload   # http://localhost:8000
 cd frontend && npm run dev                         # http://localhost:5173
 ```
 
+**Tests:**
+
+```
+cd backend && pytest        # 61 tests
+cd frontend && npm test     # 55 tests
+```
+
 **Dependency audit:**
 
 ```

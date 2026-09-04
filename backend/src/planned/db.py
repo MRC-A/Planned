@@ -1,13 +1,30 @@
 """SQLite persistence layer (local-first, single file, zero setup)."""
 import shutil
+import sqlite3
 from datetime import datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
 from sqlmodel import SQLModel, create_engine
 
 from planned.config import DB_PATH
 
 engine = create_engine(f"sqlite:///{DB_PATH}")
+
+
+# C5 — SQLite ships with foreign key enforcement OFF, per connection. The
+# FKs on task.parent_id and task.depends_on were declared and never applied,
+# so a row could point at an id that doesn't exist; one such row was found in
+# the real database. Registered on the Engine class rather than on this one
+# engine so the test engines get it too — a guard the tests don't exercise is
+# a guard you find out about in production.
+@event.listens_for(Engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record) -> None:
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 # A single SQLite file with no backup was flagged as the single biggest risk
 # for a personal planner (2026-09-01 review, F2) — there was no way to

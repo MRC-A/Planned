@@ -53,6 +53,32 @@ def _validate_parent(session: Session, parent_id: Optional[int], task_id: Option
             )
 
 
+def _validate_depends_on(session: Session, depends_on: Optional[int], task_id: Optional[int] = None) -> None:
+    """Symmetric to _validate_parent, for the other nullable FK (C5).
+    `depends_on = 999999` used to be accepted with a 200, storing a reference
+    to nothing — the same shape of dangling row that the delete-time
+    detaching exists to prevent, just created directly instead.
+
+    Cycle detection is deliberately not here: a chain A->B->A is a different
+    problem (C6) needing a graph walk, and this check has to stay cheap
+    enough to run on every write."""
+    if depends_on is None:
+        return
+    if task_id is not None and depends_on == task_id:
+        raise HTTPException(status_code=400, detail="A task cannot depend on itself.")
+    if session.get(Task, depends_on) is None:
+        raise HTTPException(status_code=404, detail="Depends-on task not found")
+
+
+def _validate_dates(start_date: Optional[datetime], due_date: Optional[datetime]) -> None:
+    """A task finishing before it starts is a data-entry slip, not a plan —
+    and it renders as a backwards or zero-length bar in Calendar and Timeline
+    (both of which quietly re-order the pair to salvage something drawable).
+    Either date may still be null on its own."""
+    if start_date is not None and due_date is not None and due_date < start_date:
+        raise HTTPException(status_code=400, detail="Due date cannot be earlier than the start date.")
+
+
 @router.get("/", response_model=list[Task])
 def list_tasks() -> list[Task]:
     with Session(engine) as session:
@@ -63,6 +89,8 @@ def list_tasks() -> list[Task]:
 def create_task(payload: TaskCreate) -> Task:
     with Session(engine) as session:
         _validate_parent(session, payload.parent_id)
+        _validate_depends_on(session, payload.depends_on)
+        _validate_dates(payload.start_date, payload.due_date)
         task = Task.model_validate(payload.model_dump())
         session.add(task)
         session.commit()
@@ -79,6 +107,15 @@ def update_task(task_id: int, payload: TaskUpdate) -> Task:
         updates = payload.model_dump(exclude_unset=True)
         if "parent_id" in updates:
             _validate_parent(session, updates["parent_id"], task_id=task_id)
+        if "depends_on" in updates:
+            _validate_depends_on(session, updates["depends_on"], task_id=task_id)
+        # Validate the dates the task will *end up* with, not just the ones in
+        # this payload: a PATCH that moves only the due date has to be checked
+        # against the start date already stored.
+        _validate_dates(
+            updates.get("start_date", task.start_date),
+            updates.get("due_date", task.due_date),
+        )
         for field, value in updates.items():
             setattr(task, field, value)
         task.updated_at = datetime.utcnow()
@@ -88,29 +125,32 @@ def update_task(task_id: int, payload: TaskUpdate) -> Task:
         return task
 
 
-def _detach_references(session: Session, ids: set[int], keep_ids: set[int]) -> None:
+def _detach_references(session: Session, ids: set[int]) -> None:
     """A deleted task can't leave dangling references behind — orphaned rows
     pointing at a parent_id/depends_on that no longer exists were invisible
     everywhere except To-Do (a bug found in production). Children are
     promoted to top-level rather than cascade-deleted: losing the parent
     shouldn't silently lose the subtasks' own data. Shared by single and
-    bulk delete; `keep_ids` (the ids also being deleted in the same call)
-    are skipped since they need no detaching — they're going away too."""
-    children = session.exec(select(Task).where(Task.parent_id.in_(ids))).all()
-    dependents = session.exec(select(Task).where(Task.depends_on.in_(ids))).all()
+    bulk delete.
+
+    Rows that are themselves being deleted used to be skipped here as a
+    pointless update. They aren't skipped any more, and that matters now that
+    foreign keys are actually enforced (C5): SQLAlchemy has no declared
+    relationship to order these deletes by, so deleting a parent before its
+    child in the same batch would trip the constraint. Clearing every
+    reference first, then flushing, removes the ordering question entirely."""
+    referencing = session.exec(
+        select(Task).where((Task.parent_id.in_(ids)) | (Task.depends_on.in_(ids)))
+    ).all()
     now = datetime.utcnow()
-    for child in children:
-        if child.id in keep_ids:
-            continue
-        child.parent_id = None
-        child.updated_at = now
-        session.add(child)
-    for dependent in dependents:
-        if dependent.id in keep_ids:
-            continue
-        dependent.depends_on = None
-        dependent.updated_at = now
-        session.add(dependent)
+    for task in referencing:
+        if task.parent_id in ids:
+            task.parent_id = None
+        if task.depends_on in ids:
+            task.depends_on = None
+        task.updated_at = now
+        session.add(task)
+    session.flush()
 
 
 @router.post("/bulk-delete", response_model=BulkDeleteResponse)
@@ -120,7 +160,7 @@ def bulk_delete_tasks(payload: BulkDeleteRequest) -> BulkDeleteResponse:
         tasks = session.exec(select(Task).where(Task.id.in_(ids))).all()
         found_ids = {t.id for t in tasks}
 
-        _detach_references(session, found_ids, keep_ids=found_ids)
+        _detach_references(session, found_ids)
         for task in tasks:
             session.delete(task)
         session.commit()
@@ -134,6 +174,6 @@ def delete_task(task_id: int) -> None:
         if task is None:
             raise HTTPException(status_code=404, detail="Task not found")
 
-        _detach_references(session, {task_id}, keep_ids=set())
+        _detach_references(session, {task_id})
         session.delete(task)
         session.commit()

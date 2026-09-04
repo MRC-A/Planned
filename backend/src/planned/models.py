@@ -60,7 +60,8 @@ class TaskCreate(SQLModel):
     priority: TaskPriority = TaskPriority.MEDIUM
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
-    duration_hours: Optional[float] = None
+    # C5 — a task took duration_hours = -5 without complaint.
+    duration_hours: Optional[float] = Field(default=None, ge=0)
     depends_on: Optional[int] = None
     parent_id: Optional[int] = None
     tags: Optional[str] = Field(default=None, max_length=MAX_TAGS_LEN)
@@ -75,7 +76,7 @@ class TaskUpdate(SQLModel):
     priority: Optional[TaskPriority] = None
     start_date: Optional[datetime] = None
     due_date: Optional[datetime] = None
-    duration_hours: Optional[float] = None
+    duration_hours: Optional[float] = Field(default=None, ge=0)
     depends_on: Optional[int] = None
     parent_id: Optional[int] = None
     tags: Optional[str] = Field(default=None, max_length=MAX_TAGS_LEN)

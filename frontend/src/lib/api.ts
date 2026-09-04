@@ -4,7 +4,7 @@ import type { ProposedTask, ProposedTaskUpdate, Task, TaskDraft, TaskPatch, Task
 
 const API_BASE = '/api/tasks'
 
-interface ApiTask {
+export interface ApiTask {
   id: number
   title: string
   description: string
@@ -20,7 +20,9 @@ interface ApiTask {
   updated_at: string
 }
 
-function fromApi(raw: ApiTask): Task {
+// Exported for tests — this pair is the hand-maintained mirror of the
+// backend's shape, the thing CLAUDE.md warns has to move in lockstep.
+export function fromApi(raw: ApiTask): Task {
   return {
     id: raw.id,
     title: raw.title,
@@ -40,7 +42,7 @@ function fromApi(raw: ApiTask): Task {
   }
 }
 
-function toApiPayload(draft: TaskPatch): Record<string, unknown> {
+export function toApiPayload(draft: TaskPatch): Record<string, unknown> {
   const payload: Record<string, unknown> = {}
   if (draft.title !== undefined) payload.title = draft.title
   if (draft.description !== undefined) payload.description = draft.description

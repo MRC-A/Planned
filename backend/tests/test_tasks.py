@@ -1,7 +1,15 @@
 """Regression tests for the subtask-integrity bugs found in the 2026-09-01
 review (see CLAUDE.md subtasks section): a task becoming its own parent
 (C3), a 3-level subtask chain forming (C2), and deleting a task leaving
-dangling parent_id/depends_on references behind (C1)."""
+dangling parent_id/depends_on references behind (C1).
+
+Extended for C5: value validation the server previously skipped entirely —
+negative durations, depends_on pointing at nothing, a due date before the
+start date, and SQLite foreign keys that were declared but never enforced."""
+import pytest
+from sqlmodel import Session
+
+from planned.models import Task
 
 
 def create(client, **fields):
@@ -137,4 +145,111 @@ def test_bulk_delete_ignores_ids_that_do_not_exist(client):
 
     assert response.status_code == 200
     assert response.json()["deleted"] == [real["id"]]
+    assert client.get("/api/tasks/").json() == []
+
+
+# --- C5: server-side value validation ---------------------------------------
+
+
+def test_rejects_a_negative_duration(client):
+    """duration_hours = -5 used to be stored as-is."""
+    response = client.post("/api/tasks/", json={"title": "x", "duration_hours": -5})
+
+    assert response.status_code == 422
+
+
+def test_accepts_a_zero_duration(client):
+    assert client.post("/api/tasks/", json={"title": "x", "duration_hours": 0}).status_code == 200
+
+
+def test_rejects_depends_on_a_task_that_does_not_exist(client):
+    """Used to return 200 and store a reference to nothing."""
+    response = client.post("/api/tasks/", json={"title": "x", "depends_on": 999999})
+
+    assert response.status_code == 404
+
+
+def test_rejects_a_task_depending_on_itself(client):
+    task = client.post("/api/tasks/", json={"title": "x"}).json()
+
+    response = client.patch(f"/api/tasks/{task['id']}", json={"depends_on": task["id"]})
+
+    assert response.status_code == 400
+
+
+def test_accepts_depends_on_a_real_task(client):
+    target = client.post("/api/tasks/", json={"title": "first"}).json()
+
+    response = client.post("/api/tasks/", json={"title": "second", "depends_on": target["id"]})
+
+    assert response.status_code == 200
+    assert response.json()["depends_on"] == target["id"]
+
+
+def test_rejects_a_due_date_before_the_start_date(client):
+    response = client.post(
+        "/api/tasks/",
+        json={"title": "x", "start_date": "2026-10-10", "due_date": "2026-10-01"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_allows_a_single_day_task(client):
+    response = client.post(
+        "/api/tasks/",
+        json={"title": "x", "start_date": "2026-10-10", "due_date": "2026-10-10"},
+    )
+
+    assert response.status_code == 200
+
+
+def test_patching_only_the_due_date_is_checked_against_the_stored_start_date(client):
+    """The dates that matter are the ones the task ends up with, not just the
+    ones in this payload."""
+    task = client.post(
+        "/api/tasks/", json={"title": "x", "start_date": "2026-10-10", "due_date": "2026-10-20"}
+    ).json()
+
+    response = client.patch(f"/api/tasks/{task['id']}", json={"due_date": "2026-10-01"})
+
+    assert response.status_code == 400
+
+
+def test_clearing_the_start_date_leaves_a_lone_due_date_valid(client):
+    task = client.post(
+        "/api/tasks/", json={"title": "x", "start_date": "2026-10-10", "due_date": "2026-10-20"}
+    ).json()
+
+    response = client.patch(f"/api/tasks/{task['id']}", json={"start_date": None})
+
+    assert response.status_code == 200
+
+
+def test_sqlite_foreign_keys_are_actually_enforced(client):
+    """The FKs were declared and never applied — SQLite defaults the pragma
+    to OFF, per connection. Bypass the API's own checks and write straight to
+    the session, so this fails if only the application-level guards exist."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    from planned.api import tasks as tasks_api
+
+    with Session(tasks_api.engine) as session:
+        assert session.exec(text("PRAGMA foreign_keys")).one()[0] == 1
+        session.add(Task(title="dangling", depends_on=999999))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_deleting_a_parent_and_its_child_together_still_works_with_fks_on(client):
+    """Enforced FKs make delete order matter, and SQLAlchemy has no declared
+    relationship here to order by — references have to be cleared first."""
+    parent = client.post("/api/tasks/", json={"title": "parent"}).json()
+    child = client.post("/api/tasks/", json={"title": "child", "parent_id": parent["id"]}).json()
+
+    response = client.post("/api/tasks/bulk-delete", json={"ids": [parent["id"], child["id"]]})
+
+    assert response.status_code == 200
+    assert sorted(response.json()["deleted"]) == sorted([parent["id"], child["id"]])
     assert client.get("/api/tasks/").json() == []
