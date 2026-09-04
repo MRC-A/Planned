@@ -5,17 +5,20 @@
 import { useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import type { EventClickArg, EventContentArg } from '@fullcalendar/core'
+import interactionPlugin from '@fullcalendar/interaction'
+import type { EventClickArg, EventContentArg, EventDropArg } from '@fullcalendar/core'
+import type { EventResizeDoneArg } from '@fullcalendar/interaction'
 import ShowCompletedToggle from '@/components/show-completed-toggle'
 import TaskDetailDialog from '@/components/task-detail-dialog'
 import { useShowCompleted } from '@/hooks/use-show-completed'
-import { shiftISODate } from '@/lib/task-dates'
+import { addDays, daysBetween, formatISODate, shiftISODate } from '@/lib/task-dates'
 import { DONE_BG_COLOR, DONE_TEXT_COLOR, PRIORITY_BG_COLOR, PRIORITY_TEXT_COLOR } from '@/lib/task-display'
 import '@/styles/calendar.css'
-import type { Task } from '@/types/task'
+import type { Task, TaskPatch } from '@/types/task'
 
 interface CalendarViewProps {
   tasks: Task[]
+  onEdit: (id: number, patch: TaskPatch) => Promise<void>
 }
 
 // Exported for tests: this is where C4 lived (see lib/task-dates.ts).
@@ -52,9 +55,32 @@ function renderEventContent(arg: EventContentArg) {
   return <span className="truncate px-1 text-xs">{arg.event.title}</span>
 }
 
-export default function CalendarView({ tasks }: CalendarViewProps) {
+// F7 — a plain move preserves the task's span and which dates it actually
+// has: a task with only a due date stays that way rather than gaining a
+// start date it never had. Mirrors GanttView's own drag-to-move, which
+// shifts whichever of startDate/dueDate is set by the same delta rather
+// than re-deriving both ends from FullCalendar's redrawn event box.
+// Exported for tests, same pattern as toEvents above.
+export function dropPatch(task: Task, deltaDays: number): TaskPatch {
+  const patch: TaskPatch = {}
+  if (task.startDate) patch.startDate = shiftISODate(task.startDate, deltaDays)
+  if (task.dueDate) patch.dueDate = shiftISODate(task.dueDate, deltaDays)
+  return patch
+}
+
+// A resize inherently defines a new range, so — unlike a move — both ends
+// become explicit real dates rather than preserving whichever the task had
+// before. `end` is FullCalendar's exclusive all-day end (see toEvents).
+export function resizePatch(start: Date, end: Date | null): TaskPatch {
+  const startISO = formatISODate(start)
+  const dueISO = end ? formatISODate(addDays(end, -1)) : startISO
+  return { startDate: startISO, dueDate: dueISO }
+}
+
+export default function CalendarView({ tasks, onEdit }: CalendarViewProps) {
   const { showCompleted, toggle: toggleShowCompleted } = useShowCompleted('calendar')
   const [detailTask, setDetailTask] = useState<Task | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const topLevel = tasks.filter((t) => t.parentId === null)
   // Done tasks are hidden by default (see hooks/use-show-completed.ts) —
@@ -70,6 +96,50 @@ export default function CalendarView({ tasks }: CalendarViewProps) {
     if (clicked) setDetailTask(clicked)
   }
 
+  // Drag to move (F7). The day delta is read from the two Date objects
+  // FullCalendar hands back rather than its own Duration decomposition
+  // (years/months/days) — daysBetween is the one place this app does that
+  // arithmetic, so it stays correct even for a drag that crosses a DST
+  // transition, which a naive Duration read would not guarantee.
+  async function handleEventDrop(info: EventDropArg) {
+    const id = Number(info.event.id)
+    const task = tasks.find((t) => t.id === id)
+    const oldStart = info.oldEvent.start
+    const newStart = info.event.start
+    if (!task || !oldStart || !newStart) {
+      info.revert()
+      return
+    }
+    const deltaDays = daysBetween(oldStart, newStart)
+    if (deltaDays === 0) return
+    setActionError(null)
+    try {
+      await onEdit(id, dropPatch(task, deltaDays))
+    } catch (err) {
+      info.revert()
+      setActionError(err instanceof Error ? err.message : 'Could not reschedule that task.')
+    }
+  }
+
+  // Drag an edge to resize (F7). Only the right edge is draggable by
+  // default (eventResizableFromStart is off) — dragging the due-date end is
+  // the common case, and FullCalendar's own default keeps this from also
+  // catching accidental drags on the left edge of a short event.
+  async function handleEventResize(info: EventResizeDoneArg) {
+    const id = Number(info.event.id)
+    if (!info.event.start) {
+      info.revert()
+      return
+    }
+    setActionError(null)
+    try {
+      await onEdit(id, resizePatch(info.event.start, info.event.end))
+    } catch (err) {
+      info.revert()
+      setActionError(err instanceof Error ? err.message : 'Could not reschedule that task.')
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-end">
@@ -79,15 +149,20 @@ export default function CalendarView({ tasks }: CalendarViewProps) {
           onToggle={toggleShowCompleted}
         />
       </div>
+      {actionError && <p className="text-xs text-destructive">{actionError}</p>}
+
       <div className="rounded-lg border border-border bg-card p-3">
         <FullCalendar
-          plugins={[dayGridPlugin]}
+          plugins={[dayGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
           height="auto"
           events={events}
           eventContent={renderEventContent}
           eventClick={handleEventClick}
+          editable
+          eventDrop={handleEventDrop}
+          eventResize={handleEventResize}
         />
       </div>
       {unscheduled > 0 && (

@@ -7,7 +7,7 @@
 // day silently vanished from the grid — measured at the time as a 3-day task
 // drawing a 2-day bar.
 import { describe, expect, it } from 'vitest'
-import { toEvents } from './CalendarView'
+import { dropPatch, resizePatch, toEvents } from './CalendarView'
 import type { Task } from '@/types/task'
 
 function task(fields: Partial<Task>): Task {
@@ -87,5 +87,62 @@ describe('toEvents', () => {
     ])
 
     expect(event.end).toBe('2026-11-01')
+  })
+})
+
+// F7 — drag to reschedule (dropPatch) and drag-to-resize (resizePatch).
+describe('dropPatch', () => {
+  it('shifts both dates by the same delta, preserving the span', () => {
+    const t = task({ startDate: '2026-09-08T00:00:00', dueDate: '2026-09-10T00:00:00' })
+
+    expect(dropPatch(t, 5)).toEqual({ startDate: '2026-09-13', dueDate: '2026-09-15' })
+  })
+
+  it('does not invent a start date for a task that only had a due date', () => {
+    const t = task({ dueDate: '2026-09-10T00:00:00' })
+
+    expect(dropPatch(t, 3)).toEqual({ dueDate: '2026-09-13' })
+  })
+
+  it('does not invent a due date for a task that only had a start date', () => {
+    const t = task({ startDate: '2026-09-10T00:00:00' })
+
+    expect(dropPatch(t, 3)).toEqual({ startDate: '2026-09-13' })
+  })
+
+  it('shifts backwards for a negative delta', () => {
+    const t = task({ startDate: '2026-09-10T00:00:00', dueDate: '2026-09-10T00:00:00' })
+
+    expect(dropPatch(t, -2)).toEqual({ startDate: '2026-09-08', dueDate: '2026-09-08' })
+  })
+
+  it('crosses a month boundary without drift', () => {
+    const t = task({ dueDate: '2026-09-29T00:00:00' })
+
+    expect(dropPatch(t, 3)).toEqual({ dueDate: '2026-10-02' })
+  })
+})
+
+describe('resizePatch', () => {
+  it('converts the exclusive end back to an inclusive due date', () => {
+    // FullCalendar hands back the day AFTER the last visible day.
+    const patch = resizePatch(new Date(2026, 8, 8), new Date(2026, 8, 12))
+
+    expect(patch).toEqual({ startDate: '2026-09-08', dueDate: '2026-09-11' })
+  })
+
+  it('falls back to a single-day span when there is no end at all', () => {
+    expect(resizePatch(new Date(2026, 8, 8), null)).toEqual({
+      startDate: '2026-09-08',
+      dueDate: '2026-09-08',
+    })
+  })
+
+  it('always sets both dates explicitly, unlike a move', () => {
+    // A resize defines a real range regardless of what the task had before —
+    // this is the one place both ends are always written.
+    const patch = resizePatch(new Date(2026, 8, 8), new Date(2026, 8, 9))
+
+    expect(Object.keys(patch).sort()).toEqual(['dueDate', 'startDate'])
   })
 })

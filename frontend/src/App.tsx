@@ -73,7 +73,7 @@ export default function App() {
             />
           )}
           {view === 'todo' && <TodoView tasks={tasks} loading={loading} onToggleDone={toggleDone} />}
-          {view === 'calendar' && <CalendarView tasks={tasks} />}
+          {view === 'calendar' && <CalendarView tasks={tasks} onEdit={edit} />}
           {view === 'gantt' && <GanttView tasks={tasks} onEdit={edit} />}
         </div>
       </main>

@@ -6,7 +6,7 @@ Planned is a task and project management app built around one shared set of task
 
 - **Table** — the exhaustive view: every field, inline status/priority, create/edit/delete (delete asks for confirmation first), tick several rows to delete them in one go, expandable subtasks, sortable by priority, start date, due date, or status, with a search box and status/priority/tag filters to cut down a long list.
 - **To-Do** — a simplified list, sortable by priority or due date.
-- **Calendar** — month view, tasks colored by priority.
+- **Calendar** — month view, tasks colored by priority. Drag an event to reschedule it, or drag its right edge to change how long it runs.
 - **Timeline** (the Gantt tab) — your tasks as rows, time across the top, with Day/Week/Month zoom and priority-colored bars. Subtasks get their own rows under their parent, and a parent with no dates of its own shows a thin bar spanning its children. Tasks with no date aren't hidden: they wait in a tray under the chart, and you drag one onto a day to schedule it — drag a bar to move it, or either edge to change how long it runs.
 - **Subtasks** — one level deep, hidden by default except in Table (expand a task to see them), To-Do (always visible) and the Timeline (indented under their parent).
 - **Recurring tasks** — set a task to repeat Daily, Weekly, or Monthly; marking it done creates the next occurrence, dated forward from wherever it left off.
@@ -38,8 +38,8 @@ cd frontend && npm run dev                         # http://localhost:5173
 **Tests:**
 
 ```
-cd backend && pytest        # 61 tests
-cd frontend && npm test     # 55 tests
+cd backend && pytest        # 73 tests
+cd frontend && npm test     # 63 tests
 ```
 
 **Dependency audit:**
