@@ -19,9 +19,11 @@ give the model context for scheduling, but doesn't write anything.
 from datetime import date
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ValidationError
+from openai import APITimeoutError
+from pydantic import BaseModel, ValidationError, field_validator
 from sqlmodel import Session, select
 
+from planned.config import LLM_TIMEOUT_SECONDS
 from planned.db import engine
 from planned.llm.client import LocalLLMClient
 from planned.models import Task, TaskPriority, TaskStatus
@@ -155,7 +157,91 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
 
 
+# --- Field coercion at the tool-call boundary -------------------------------
+#
+# Everything below exists because the model's tool-call arguments are the one
+# place in this app where free-form model output turns into an API payload.
+# A value the later POST/PATCH would reject has to be caught HERE, where the
+# rest of the proposal still survives, rather than surfacing to the user as a
+# raw 422 about a request they never knowingly made — or worse (see `tags`
+# below) as a TypeError that takes the chat panel down with it.
+#
+# Each coercer returns (usable, normalized_value). `usable=False` means the
+# field is dropped; what "dropped" means differs by caller and matters:
+#   - propose_tasks     -> fall back to the field's default (absent == unset)
+#   - propose_task_updates -> omit the key entirely, since there an explicit
+#     null is a real "clear this field" instruction, not the same as absent.
+
+_PRIORITY_VALUES = {p.value for p in TaskPriority}
+_STATUS_VALUES = {s.value for s in TaskStatus}
+
+
+def _coerce_text(value):
+    """Title/description. Null is NOT acceptable: TaskUpdate.title is
+    Optional[str] and PATCH setattr's whatever it's given, so a proposed
+    `title: null` would blank the stored title outright."""
+    return (True, value) if isinstance(value, str) else (False, None)
+
+
+def _coerce_date(value):
+    """Absolute YYYY-MM-DD, or an explicit null (a legitimate "clear it").
+    A full datetime is narrowed to its date part; anything else — notably the
+    relative phrases the model still reaches for despite the prompt telling
+    it not to ("next Friday"), and impossible dates like 2026-13-45 — is
+    dropped."""
+    if value is None:
+        return True, None
+    if not isinstance(value, str):
+        return False, None
+    head = value[:10]
+    try:
+        date.fromisoformat(head)
+    except ValueError:
+        return False, None
+    return True, head
+
+
+def _coerce_number(value):
+    if value is None:
+        return True, None
+    # bool is an int subclass in Python — True would otherwise become 1.0.
+    if isinstance(value, bool):
+        return False, None
+    if isinstance(value, (int, float)):
+        return True, float(value)
+    if isinstance(value, str):
+        try:
+            return True, float(value.strip())
+        except ValueError:
+            return False, None
+    return False, None
+
+
+def _coerce_tags(value):
+    """Must be a list of strings. `null` in particular has to be caught: the
+    frontend does `u.tags.join(', ')` when rendering an update's diff, so a
+    null here throws while rendering rather than failing a request."""
+    if isinstance(value, list) and all(isinstance(x, str) for x in value):
+        return True, value
+    return False, None
+
+
+def _coerce_priority(value):
+    return (True, value) if value in _PRIORITY_VALUES else (False, None)
+
+
+def _coerce_status(value):
+    return (True, value) if value in _STATUS_VALUES else (False, None)
+
+
 class ProposedTask(BaseModel):
+    """A new task the model proposes. Every field but `title` degrades to its
+    default when the model sends something unusable, so one bad field costs
+    that field rather than the whole task — a `duration_hours` of "about 3
+    hours" used to raise ValidationError and silently discard the entire
+    proposal. A missing/non-string title still drops the task: there's
+    nothing to create without one."""
+
     title: str
     description: str = ""
     priority: str = "medium"
@@ -164,6 +250,36 @@ class ProposedTask(BaseModel):
     duration_hours: float | None = None
     tags: list[str] = []
     parent_ref: int | None = None
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def _v_description(cls, v):
+        ok, value = _coerce_text(v)
+        return value if ok else ""
+
+    @field_validator("priority", mode="before")
+    @classmethod
+    def _v_priority(cls, v):
+        ok, value = _coerce_priority(v)
+        return value if ok else "medium"
+
+    @field_validator("start_date", "due_date", mode="before")
+    @classmethod
+    def _v_date(cls, v):
+        ok, value = _coerce_date(v)
+        return value if ok else None
+
+    @field_validator("duration_hours", mode="before")
+    @classmethod
+    def _v_duration(cls, v):
+        ok, value = _coerce_number(v)
+        return value if ok else None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _v_tags(cls, v):
+        ok, value = _coerce_tags(v)
+        return value if ok else []
 
 
 class ChatResponse(BaseModel):
@@ -207,6 +323,37 @@ def _existing_tasks_summary(tasks: list[Task]) -> str:
     return summary
 
 
+def _validated_tasks(raw_tasks: list) -> list[ProposedTask]:
+    """Validate each proposed task, dropping the ones with no usable title,
+    and remap `parent_ref` across the index shift that dropping causes.
+
+    This remap is the whole point. `parent_ref` is a 0-based index into the
+    array the model emitted; dropping an entry renumbers everything after it,
+    so without remapping a subtask silently attaches to the WRONG parent —
+    e.g. [invalid, "Design", "Build", subtask(parent_ref=1)] left the subtask
+    pointing at "Build" instead of "Design". Nothing errored, the batch just
+    came out wrong, and the malformed-task case that triggers it is one
+    already seen live (a task missing its title).
+    """
+    kept: list[ProposedTask] = []
+    new_index_of: dict[int, int] = {}
+    for original_index, raw in enumerate(raw_tasks):
+        try:
+            task = ProposedTask.model_validate(raw)
+        except ValidationError:
+            continue
+        new_index_of[original_index] = len(kept)
+        kept.append(task)
+
+    for task in kept:
+        if task.parent_ref is not None:
+            # A parent that was itself dropped leaves the child top-level.
+            task.parent_ref = new_index_of.get(task.parent_ref)
+
+    _sanitize_parent_refs(kept)
+    return kept
+
+
 def _sanitize_parent_refs(tasks: list[ProposedTask]) -> None:
     """Keep the one-level-deep subtask rule (see api/tasks.py::_validate_parent
     for the equivalent, persisted-side rule): drop any parent_ref that's out
@@ -222,27 +369,20 @@ def _sanitize_parent_refs(tasks: list[ProposedTask]) -> None:
 
 
 # snake_case (the tool schema, matching the rest of this API) -> camelCase
-# (what the frontend's TaskPatch expects).
-_UPDATE_FIELD_MAP = {
-    "title": "title",
-    "description": "description",
-    "status": "status",
-    "priority": "priority",
-    "start_date": "startDate",
-    "due_date": "dueDate",
-    "duration_hours": "durationHours",
-    "tags": "tags",
-}
-
-
-# Enum-valued fields, checked here rather than left to blow up later: an
-# out-of-enum value (the model writing "finished" instead of "done") would
-# otherwise sail through to the frontend and come back as a raw 422 from
-# PATCH /api/tasks/{id} — an error about a request the user didn't know they
-# were making. Dropping just that field keeps the rest of the update usable.
-_UPDATE_ENUMS = {
-    "status": {s.value for s in TaskStatus},
-    "priority": {p.value for p in TaskPriority},
+# (what the frontend's TaskPatch expects), plus the coercer each field has to
+# pass. A field that fails its coercer is left out of the patch entirely,
+# which keeps the rest of the update usable — the alternative was a raw 422
+# (or, for tags, a render-time TypeError) on a request the user never
+# knowingly made.
+_UPDATE_FIELDS = {
+    "title": ("title", _coerce_text),
+    "description": ("description", _coerce_text),
+    "status": ("status", _coerce_status),
+    "priority": ("priority", _coerce_priority),
+    "start_date": ("startDate", _coerce_date),
+    "due_date": ("dueDate", _coerce_date),
+    "duration_hours": ("durationHours", _coerce_number),
+    "tags": ("tags", _coerce_tags),
 }
 
 
@@ -262,11 +402,11 @@ def _build_proposed_updates(raw_updates: list, open_task_ids: set[int]) -> list[
         if not isinstance(task_id, int) or task_id not in open_task_ids:
             continue
         patch = {}
-        for snake, camel in _UPDATE_FIELD_MAP.items():
+        for snake, (camel, coerce) in _UPDATE_FIELDS.items():
             if snake not in raw:
                 continue
-            value = raw[snake]
-            if snake in _UPDATE_ENUMS and value not in _UPDATE_ENUMS[snake]:
+            usable, value = coerce(raw[snake])
+            if not usable:
                 continue
             patch[camel] = value
         if not patch:
@@ -352,6 +492,17 @@ def send_message(request: ChatRequest) -> ChatResponse:
     messages += [m.model_dump() for m in request.messages]
     try:
         result = _llm.chat(messages, tools=[PROPOSE_TASKS_TOOL, PROPOSE_TASK_UPDATES_TOOL])
+    except APITimeoutError as exc:
+        # Distinct from the 503 below on purpose: the server IS reachable,
+        # it's just taking too long, so "is LM Studio running?" would send
+        # the user looking in the wrong place.
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"The local model didn't answer within {LLM_TIMEOUT_SECONDS}s. "
+                "It may be loading, or the request may be too large for it — try again."
+            ),
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -362,17 +513,10 @@ def send_message(request: ChatRequest) -> ChatResponse:
 
     if tool_call and tool_call["name"] == "propose_tasks":
         raw_tasks = tool_call["arguments"].get("tasks", [])
-        # The model occasionally emits a tool call missing a required field
-        # (e.g. no "title") — skip just that task rather than 500ing the
-        # whole reply, same "degrade, don't reject the batch" spirit as
-        # _sanitize_parent_refs above.
-        proposed = []
-        for t in raw_tasks:
-            try:
-                proposed.append(ProposedTask.model_validate(t))
-            except ValidationError:
-                continue
-        _sanitize_parent_refs(proposed)
+        # Drops the untitled tasks the model occasionally emits, degrades
+        # every other bad field to its default, and remaps parent_ref across
+        # the resulting index shift — see _validated_tasks.
+        proposed = _validated_tasks(raw_tasks)
         if not proposed:
             return ChatResponse(
                 content=result["content"]

@@ -8,12 +8,27 @@ from typing import Any, Optional
 
 from openai import OpenAI
 
-from planned.config import LLM_BASE_URL, LLM_MODEL
+from planned.config import LLM_BASE_URL, LLM_MAX_RETRIES, LLM_MODEL, LLM_TIMEOUT_SECONDS
 
 
 class LocalLLMClient:
-    def __init__(self, base_url: str = LLM_BASE_URL, model: str = LLM_MODEL) -> None:
-        self._client = OpenAI(base_url=base_url, api_key="not-needed")
+    def __init__(
+        self,
+        base_url: str = LLM_BASE_URL,
+        model: str = LLM_MODEL,
+        timeout: float = LLM_TIMEOUT_SECONDS,
+        max_retries: int = LLM_MAX_RETRIES,
+    ) -> None:
+        # timeout/max_retries are set explicitly: the SDK's defaults (600s,
+        # 2 retries) let a wedged local server hold a request for ~30 minutes.
+        # A timeout surfaces as openai.APITimeoutError, which api/chat.py
+        # turns into a 504 distinct from the "can't reach it at all" 503.
+        self._client = OpenAI(
+            base_url=base_url,
+            api_key="not-needed",
+            timeout=timeout,
+            max_retries=max_retries,
+        )
         self._model = model
 
     def chat(self, messages: list[dict], tools: Optional[list[dict]] = None) -> dict[str, Any]:

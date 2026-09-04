@@ -62,7 +62,7 @@ function diffLines(current: Task, u: ProposedTaskUpdate): { label: string; from:
 }
 
 export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPanelProps) {
-  const { messages, sending, error, send } = useChat()
+  const { messages, sending, error, send, cancel } = useChat()
   const [draft, setDraft] = useState('')
   const [shuttingDown, setShuttingDown] = useState(false)
   const [resolvedProposals, setResolvedProposals] = useState<Set<number>>(new Set())
@@ -301,8 +301,14 @@ export default function ChatPanel({ tasks, onCreateTask, onUpdateTask }: ChatPan
             </div>
           ))}
           {sending && (
-            <div className="max-w-[85%] rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+            <div className="flex max-w-[85%] items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
               Thinking…
+              <button
+                onClick={cancel}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Stop
+              </button>
             </div>
           )}
         </div>

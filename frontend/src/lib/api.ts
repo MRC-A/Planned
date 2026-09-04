@@ -144,11 +144,15 @@ function proposedTaskFromApi(raw: ApiProposedTask): ProposedTask {
 // Not under API_BASE either — the chat endpoint lives at /api/chat. Only
 // role/content go out (proposedTasks is a client-side annotation the
 // backend doesn't know about and doesn't need echoed back).
-export async function sendChatMessage(messages: ChatMessage[]): Promise<ChatMessage> {
+export async function sendChatMessage(
+  messages: ChatMessage[],
+  signal?: AbortSignal,
+): Promise<ChatMessage> {
   const response = await fetch('/api/chat/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })) }),
+    signal,
   })
   if (!response.ok) {
     let message = `Chat request failed (${response.status})`
