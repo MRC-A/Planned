@@ -34,7 +34,11 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <main className="flex flex-1 flex-col">
+      {/* min-w-0: without it this flex item keeps min-width:auto and lets a
+          wide child (the timeline grid, a wide table) stretch it past the
+          viewport, so the child's own overflow-auto never gets to clip and
+          the whole page scrolls sideways instead. */}
+      <main className="flex min-w-0 flex-1 flex-col">
         <nav className="flex items-center justify-between gap-2 border-b border-border px-6 py-3">
           <div className="flex gap-2">
             {VIEWS.map((v) => (
@@ -70,7 +74,7 @@ export default function App() {
           )}
           {view === 'todo' && <TodoView tasks={tasks} loading={loading} onToggleDone={toggleDone} />}
           {view === 'calendar' && <CalendarView tasks={tasks} />}
-          {view === 'gantt' && <GanttView tasks={tasks} />}
+          {view === 'gantt' && <GanttView tasks={tasks} onEdit={edit} />}
         </div>
       </main>
       <ChatPanel tasks={tasks} onCreateTask={add} onUpdateTask={edit} />

@@ -7,8 +7,8 @@ Planned is a task and project management app built around one shared set of task
 - **Table** — the exhaustive view: every field, inline status/priority, create/edit/delete (delete asks for confirmation first), tick several rows to delete them in one go, expandable subtasks, sortable by priority, start date, due date, or status, with a search box and status/priority/tag filters to cut down a long list.
 - **To-Do** — a simplified list, sortable by priority or due date.
 - **Calendar** — month view, tasks colored by priority.
-- **Gantt** — Day/Week/Month zoom, priority-colored bars.
-- **Subtasks** — one level deep, hidden by default except in Table (expand a task to see them) and To-Do (always visible).
+- **Timeline** (the Gantt tab) — your tasks as rows, time across the top, with Day/Week/Month zoom and priority-colored bars. Subtasks get their own rows under their parent, and a parent with no dates of its own shows a thin bar spanning its children. Tasks with no date aren't hidden: they wait in a tray under the chart, and you drag one onto a day to schedule it — drag a bar to move it, or either edge to change how long it runs.
+- **Subtasks** — one level deep, hidden by default except in Table (expand a task to see them), To-Do (always visible) and the Timeline (indented under their parent).
 - **Completed tasks** — hidden by default in every view, with a "Show completed" toggle (remembered per view) to bring them back; once visible, they get a light green highlight so they stand out at a glance.
 - **Local LLM assistant** — chat sidebar that proposes tasks (and subtasks) for you to review before anything is created, and can also reschedule, complete or edit tasks you already have ("push the report back a week") — shown as a before/after diff you confirm before it applies. Scheduling accounts for your existing tasks and deadlines. Runs entirely against a model on your machine — no cloud dependency.
 - **Light & dark theme** — a toggle in the top nav cycling System → Light → Dark. "System" is the default and keeps following your OS setting as it changes; the choice is remembered across reloads.
