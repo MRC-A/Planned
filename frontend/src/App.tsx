@@ -5,7 +5,9 @@ import CalendarView from './views/CalendarView'
 import GanttView from './views/GanttView'
 import ChatPanel from './views/ChatPanel'
 import BackupControls from './components/backup-controls'
+import ThemeToggle from './components/theme-toggle'
 import { useTasks } from './hooks/use-tasks'
+import { useTheme } from './hooks/use-theme'
 import type { Task } from './types/task'
 
 type ViewName = 'table' | 'todo' | 'calendar' | 'gantt'
@@ -20,6 +22,7 @@ const VIEWS: { id: ViewName; label: string }[] = [
 export default function App() {
   const [view, setView] = useState<ViewName>('table')
   const { tasks, loading, error, add, edit, bulkRemove, refresh } = useTasks()
+  const { theme, cycle: cycleTheme } = useTheme()
 
   function cycleStatus(task: Task) {
     edit(task.id, { status: NEXT_STATUS[task.status] })
@@ -48,7 +51,10 @@ export default function App() {
               </button>
             ))}
           </div>
-          <BackupControls tasks={tasks} onImported={refresh} />
+          <div className="flex items-center gap-2">
+            <BackupControls tasks={tasks} onImported={refresh} />
+            <ThemeToggle theme={theme} onCycle={cycleTheme} />
+          </div>
         </nav>
         <div className="flex-1 overflow-auto p-6">
           {view === 'table' && (

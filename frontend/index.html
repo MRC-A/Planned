@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Planned</title>
+    <script>
+      // Resolve and apply the stored theme before first paint, so the app
+      // never flashes light before React mounts. Mirrors the rule in
+      // src/hooks/use-theme.ts — keep the storage key and the
+      // no-preference-means-follow-the-OS fallback in sync with it.
+      ;(function () {
+        try {
+          var pref = localStorage.getItem('planned:theme')
+          var dark =
+            pref === 'dark' ||
+            (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+        } catch (e) {
+          // storage unavailable — fall through to the light default
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

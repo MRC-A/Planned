@@ -46,3 +46,14 @@
 .fc .fc-daygrid-day-frame:hover {
   background: color-mix(in oklch, var(--color-muted) 60%, transparent);
 }
+
+/* FullCalendar's own `.fc .fc-button-primary:disabled` outspecifies the
+   `.fc .fc-button` rule above, so a disabled button — the "today" button
+   whenever today is already on screen — kept FullCalendar's default navy
+   (#2C3E50). It was the one surface in the app that never followed the
+   palette, in either theme. */
+.fc .fc-button-primary:disabled {
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+  opacity: 1;
+}

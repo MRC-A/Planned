@@ -11,6 +11,7 @@ Planned is a task and project management app built around one shared set of task
 - **Subtasks** — one level deep, hidden by default except in Table (expand a task to see them) and To-Do (always visible).
 - **Completed tasks** — hidden by default in every view, with a "Show completed" toggle (remembered per view) to bring them back; once visible, they get a light green highlight so they stand out at a glance.
 - **Local LLM assistant** — chat sidebar that proposes tasks (and subtasks) for you to review before anything is created, and can also reschedule, complete or edit tasks you already have ("push the report back a week") — shown as a before/after diff you confirm before it applies. Scheduling accounts for your existing tasks and deadlines. Runs entirely against a model on your machine — no cloud dependency.
+- **Light & dark theme** — a toggle in the top nav cycling System → Light → Dark. "System" is the default and keeps following your OS setting as it changes; the choice is remembered across reloads.
 - **Backup** — Export/Import buttons (top nav) to move your tasks in and out as a JSON file; the backend also copies the database on every startup, keeping the last 10 automatic backups, so a bad edit or a bug isn't the end of your data.
 
 ## Getting started
